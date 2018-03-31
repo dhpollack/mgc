@@ -9,10 +9,12 @@ from urllib.request import urlretrieve
 """
 
 parser = argparse.ArgumentParser(description='Google Audioset Download Script')
-parser.add_argument('--use-unbalanced', action='store_true',
-                    help='use the unbalanced (much larger) dataset rather than the balanced')
+parser.add_argument('--segs-name', type=str, default='balanced',
+                    help='balanced / unbalanced / eval')
 parser.add_argument('--target-list', type=str, default='class_labels_targets.csv',
                     help='file name of target list of labels (relative to BASEDIR)')
+parser.add_argument('--download', action='store_true',
+                    help='get youtube-dl command to download files.')
 args = parser.parse_args()
 
 YT_PREFIX = 'https://www.youtube.com/watch?v='
@@ -48,7 +50,17 @@ with open(tgt_tags_fn, 'r', newline='') as f:
 tags_idx, tags_code, tags_name = zip(*tgt_tags)
 tags_code_set = set(tags_code)
 
-manifest_fn = os.path.basename(BAL_TRAIN_SEGS_CSV) if not args.use_unbalanced else os.path.basename(UNBAL_TRAIN_SEGS_CSV)
+if args.segs_name.lower() == 'unbalanced':
+    segs_name = args.segs_name.lower()
+    segs_csv = UNBAL_TRAIN_SEGS_CSV
+elif args.segs_name.lower() == 'eval':
+    segs_name = args.segs_name.lower()
+    segs_csv = EVAL_SEGS_CSV
+else:  # default val: balanced
+    segs_name = 'balanced'
+    segs_csv = BAL_TRAIN_SEGS_CSV
+
+manifest_fn = os.path.basename(segs_csv)
 manifest_fn = os.path.join(BASEDIR, manifest_fn)
 
 with open(manifest_fn, 'r', newline='') as f:
@@ -59,22 +71,44 @@ with open(manifest_fn, 'r', newline='') as f:
     # balanced goes from 22160 to 3146
     segments = [(idx, st, fin, tags.split(',')) for idx, st, fin, tags in segments
                 if set(tags.split(',')).intersection(tags_code_set)]
+    print("{} files were found".format(len(segments)))
 
 yt_idxes, _, _, _ = zip(*segments)
 
 yt_urls = ['{}{}'.format(YT_PREFIX, idx) for idx in yt_idxes]
 
-yt_urls_file = os.path.join(BASEDIR, 'urls.txt')
+yt_urls_file = os.path.join(BASEDIR, '{}_urls.txt'.format(segs_name))
 with open(yt_urls_file, 'w') as f:
     f.write("\n".join(yt_urls))
 
-files_dir = os.path.join(BASEDIR, 'files')
+files_dir = os.path.join(BASEDIR, 'files', segs_name)
 try:
     os.makedirs(files_dir)
 except FileExistsError:
     print("{} already exists".format(files_dir))
 
-yt_dl = "youtube-dl -ci -f worstaudio \\ \n-o '{}/%(id)s.%(ext)s' \\ \n-a {}".format(files_dir, yt_urls_file)
-# youtube-dl -ci -f worstaudio -o '/home/david/Programming/repos/dhpollack/mgc/data/audioset/files/%(id)s.%(ext)s' -a /home/david/Programming/repos/dhpollack/mgc/data/audioset/urls.txt
+raw_yt_files = os.listdir(files_dir)
 
-print("run the following:\n\n{}".format(yt_dl))
+if args.download:
+    yt_dl = "youtube-dl -ci -f worstaudio \\ \n-o '{}/%(id)s.%(ext)s' \\ \n-a {}".format(files_dir, yt_urls_file)
+    # youtube-dl -ci -f worstaudio -o '/home/david/Programming/repos/dhpollack/mgc/data/audioset/files/%(id)s.%(ext)s' -a /home/david/Programming/repos/dhpollack/mgc/data/audioset/urls.txt
+    print("run the following:\n\n{}".format(yt_dl))
+else:
+    processed_dir = os.path.join(BASEDIR, 'processed', segs_name)
+    try:
+        os.makedirs(processed_dir)
+    except FileExistsError:
+        print("{} already exists".format(processed_dir))
+    for raw_yt_fn in raw_yt_files:
+        raw_yt_fn, raw_yt_ext = raw_yt_fn.split('.')
+        yt_idx = yt_idxes.index(raw_yt_fn)
+        _, st, fn, tags = segments[yt_idx]
+        st, fn = float(st), float(fn)
+        dur = fn - st
+        infile = os.path.join(files_dir, raw_yt_fn)
+        outfile = os.path.join(processed_dir, raw_yt_fn + '.wav')
+        cmd = "ffmpeg -ss {} -t {} -i {} -acodec pcm_s16le -ac 1 -ar 16000 {}".format(st, dur, infile, outfile)
+        print(cmd)
+        os.system(cmd)
+        break
+# ffmpeg -ss 30 -t 10 -i files/zyXa2tdBTGc.webm -acodec pcm_s16le -ac 1 -ar 16000 processed/zyXa2tdBTGc.wav

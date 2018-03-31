@@ -106,6 +106,7 @@ ENV/
 # output folder
 output/
 data/audioset/
+!data/audioset/class_labels_targets.csv
 
 # data files
 *.mp3
@@ -116,6 +117,7 @@ data/audioset/
 *.flac
 *.tgz
 *.csv
+*.tfrecord
 
 # nano files
 *.swp
