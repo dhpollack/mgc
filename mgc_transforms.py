@@ -340,9 +340,9 @@ class BinENC(object):
 
         """
 
-        tensor = torch.zeros(len(self.vocab)).long()
+        tensor = torch.zeros(len(self.vocab)).float()
         for label in s:
-            tensor[label] = 1
+            tensor[label] = 1.
 
         return tensor
 

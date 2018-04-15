@@ -8,6 +8,7 @@ class Test_AUDIOSET(unittest.TestCase):
 
     def test1(self):
         ds = AUDIOSET(self.bdir, randomize=False)
+        print("Number of Labels: {}".format(len(ds.labels_dict)))
         for i, (a, b) in enumerate(ds):
             print(a.size(), b)
             if i > 10: break

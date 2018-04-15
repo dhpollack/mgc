@@ -15,6 +15,8 @@ parser.add_argument('--target-list', type=str, default='class_labels_targets.csv
                     help='file name of target list of labels (relative to BASEDIR)')
 parser.add_argument('--download', action='store_true',
                     help='get youtube-dl command to download files.')
+parser.add_argument('--clobber', action='store_true',
+                    help='overwrite existing files.')
 args = parser.parse_args()
 
 YT_PREFIX = 'https://www.youtube.com/watch?v='
@@ -35,7 +37,7 @@ except FileExistsError:
 
 for uri_csv in CSV_FILES:
     fn_csv = os.path.join(BASEDIR, os.path.basename(uri_csv))
-    if not os.path.exists(fn_csv):
+    if not os.path.exists(fn_csv) or args.clobber:
         print('Downloading {}'.format(uri_csv))
         urlretrieve(uri_csv, fn_csv)
 
@@ -100,15 +102,15 @@ else:
     except FileExistsError:
         print("{} already exists".format(processed_dir))
     for raw_yt_fn in raw_yt_files:
-        raw_yt_fn, raw_yt_ext = raw_yt_fn.split('.')
-        yt_idx = yt_idxes.index(raw_yt_fn)
+        raw_yt_fn_no_ext, raw_yt_ext = raw_yt_fn.split('.')
+        yt_idx = yt_idxes.index(raw_yt_fn_no_ext)
         _, st, fn, tags = segments[yt_idx]
         st, fn = float(st), float(fn)
         dur = fn - st
         infile = os.path.join(files_dir, raw_yt_fn)
-        outfile = os.path.join(processed_dir, raw_yt_fn + '.wav')
-        cmd = "ffmpeg -ss {} -t {} -i {} -acodec pcm_s16le -ac 1 -ar 16000 {}".format(st, dur, infile, outfile)
-        print(cmd)
-        os.system(cmd)
-        break
+        outfile = os.path.join(processed_dir, raw_yt_fn_no_ext + '.wav')
+        if not os.path.exists(outfile) or args.clobber:
+            cmd = "ffmpeg -ss {} -t {} -i {} -acodec pcm_s16le -ac 1 -ar 16000 {}".format(st, dur, infile, outfile)
+            #print(cmd)
+            os.system(cmd)
 # ffmpeg -ss 30 -t 10 -i files/zyXa2tdBTGc.webm -acodec pcm_s16le -ac 1 -ar 16000 processed/zyXa2tdBTGc.wav

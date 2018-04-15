@@ -1,4 +1,5 @@
 import argparse
+import sys
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence as pack, pad_packed_sequence as unpack
@@ -10,47 +11,23 @@ import mgc_transforms
 from loader_audioset import *
 import math
 
-parser = argparse.ArgumentParser(description='PyTorch Language ID Classifier Trainer')
-parser.add_argument('--lr', type=float, default=0.0001,
-                    help='initial learning rate')
-parser.add_argument('--epochs', type=int, default=10,
-                    help='upper epoch limit')
-parser.add_argument('--batch-size', type=int, default=100, metavar='b',
-                    help='batch size')
-parser.add_argument('--freq-bands', type=int, default=224,
-                    help='number of frequency bands to use')
-parser.add_argument('--data-path', type=str, default="data/audioset/balanced",
-                    help='data path')
-parser.add_argument('--use-cache', action='store_true',
-                    help='use cache in the dataloader')
-parser.add_argument('--use-precompute', action='store_true',
-                    help='precompute transformations')
-parser.add_argument('--mixin-noise', action='store_true',
-                    help='precompute transformations')
-parser.add_argument('--num-workers', type=int, default=0,
-                    help='number of workers for data loader')
-parser.add_argument('--validate', action='store_true',
-                    help='do out-of-bag validation')
-parser.add_argument('--log-interval', type=int, default=5,
-                    help='reports per epoch')
-parser.add_argument('--chkpt-interval', type=int, default=10,
-                    help='how often to save checkpoints')
-parser.add_argument('--model-name', type=str, default="resnet34_conv",
-                    help='data path')
-parser.add_argument('--load-model', type=str, default=None,
-                    help='path of model to load')
-parser.add_argument('--save-model', action='store_true',
-                    help='path to save the final model')
-parser.add_argument('--train-full-model', action='store_true',
-                    help='train full model vs. final layer')
-parser.add_argument('--seed', type=int, default=1111,
-                    help='random seed')
-args = parser.parse_args()
-
-
 class CFG(object):
     def __init__(self):
-        self.max_len = 150000
+        parser = self.get_params()
+        args = parser.parse_args()
+        self.args = args
+        self.save_model = args.save_model
+        self.load_model = args.load_model
+        self.chkpt_interval = args.chkpt_interval
+        self.mixin_noise = args.mixin_noise
+        self.use_precompute = args.use_precompute
+        self.use_cache = args.use_cache
+        self.data_path = args.data_path
+        self.batch_size = args.batch_size
+        self.num_workers = args.num_workers
+        self.log_interval = args.log_interval
+        self.validate = args.validate
+        self.max_len = 160000  # 10 secs
         self.use_cuda = torch.cuda.is_available()
         self.ngpu = torch.cuda.device_count()
         print("CUDA: {} with {} devices".format(self.use_cuda, self.ngpu))
@@ -64,39 +41,78 @@ class CFG(object):
                 "optimizers": None,
                 "epoch": 0,
             }
-        self.model_list = self.get_model(state_dicts["models"])
+        self.cur_epoch = state_dicts["epoch"]
+        self.model_list = self.get_models(state_dicts["models"])
         self.ds, self.dl = self.get_dataloader()
         self.epochs, self.criterion, self.optimizers = self.init_optimizer(state_dicts["optimizers"])
         if self.ngpu > 1:
             self.model_list = [nn.DataParallel(m).cuda() for m in self.model_list]
-        self.save_model = args.save_model
-        self.chkpt_interval = args.chkpt_interval
-        self.mixin_noise = args.mixin_noise
         self.valid_losses = []
         self.train_losses = []
 
+    def get_params(self):
+        parser = argparse.ArgumentParser(description='PyTorch Language ID Classifier Trainer')
+        parser.add_argument('--lr', type=float, default=0.0001,
+                            help='initial learning rate')
+        parser.add_argument('--epochs', type=int, default=10,
+                            help='upper epoch limit')
+        parser.add_argument('--batch-size', type=int, default=100, metavar='b',
+                            help='batch size')
+        parser.add_argument('--freq-bands', type=int, default=224,
+                            help='number of frequency bands to use')
+        parser.add_argument('--data-path', type=str, default="data/audioset",
+                            help='data path')
+        parser.add_argument('--use-cache', action='store_true',
+                            help='use cache in the dataloader')
+        parser.add_argument('--use-precompute', action='store_true',
+                            help='precompute transformations')
+        parser.add_argument('--mixin-noise', action='store_true',
+                            help='precompute transformations')
+        parser.add_argument('--num-workers', type=int, default=0,
+                            help='number of workers for data loader')
+        parser.add_argument('--validate', action='store_true',
+                            help='do out-of-bag validation')
+        parser.add_argument('--log-interval', type=int, default=5,
+                            help='reports per epoch')
+        parser.add_argument('--chkpt-interval', type=int, default=10,
+                            help='how often to save checkpoints')
+        parser.add_argument('--model-name', type=str, default="resnet34_conv",
+                            help='data path')
+        parser.add_argument('--load-model', type=str, default=None,
+                            help='path of model to load')
+        parser.add_argument('--save-model', action='store_true',
+                            help='path to save the final model')
+        parser.add_argument('--train-full-model', action='store_true',
+                            help='train full model vs. final layer')
+        parser.add_argument('--seed', type=int, default=1111,
+                            help='random seed')
+        return parser
+
+
     def get_models(self, weights=None):
+        NUM_CLASSES = 68
+        use_pretrained = True if not self.load_model else False
         if "resnet34" in self.model_name:
-            model_list = [models.resnet.resnet34(use_pretrained, num_langs=5)]
+            model_list = [models.resnet.resnet34(use_pretrained, num_genres=NUM_CLASSES)]
         elif "resnet101" in self.model_name:
-            model_list = [models.resnet.resnet101(use_pretrained, num_langs=5)]
+            model_list = [models.resnet.resnet101(use_pretrained, num_genres=NUM_CLASSES)]
         elif "squeezenet" in self.model_name:
-            model_list = [models.squeezenet.squeezenet(use_pretrained, num_langs=5)]
+            model_list = [models.squeezenet.squeezenet(use_pretrained, num_genres=NUM_CLASSES)]
         elif "attn" in self.model_name:
             self.hidden_size = 500
             kwargs_encoder = {
-                "input_size": args.freq_bands,
+                "input_size": self.freq_bands,
                 "hidden_size": self.hidden_size,
                 "n_layers": 1,
-                "batch_size": args.batch_size
+                "batch_size": self.batch_size
             }
             kwargs_decoder = {
                 "hidden_size": self.hidden_size,
-                "output_size": 5,
+                "output_size": NUM_CLASSES,
                 "attn_model": "general",
                 "n_layers": 1,
                 "dropout": 0.0, # was 0.1
-                "batch_size": args.batch_size
+                "batch_size": self.batch_size
             }
             model_list = models.attn.attn(kwargs_encoder, kwargs_decoder)
         elif "bytenet" in self.model_name:
@@ -113,7 +129,7 @@ class CFG(object):
                 "max_r": 16,
                 "k": 3,
                 "num_sets": 6,
-                "num_classes": 5,
+                "num_classes": NUM_CLASSES,
                 "reduce_out": None,
                 "use_logsm": False,
             }
@@ -130,9 +146,9 @@ class CFG(object):
         return model_list
 
     def get_dataloader(self):
-        ds = AUDIOSET(args.data_path, mix_noise=args.mixin_noise,
-                      use_cache=args.use_cache, use_precompute=args.use_precompute)
-        if any((x for x in ["resnet34_conv", "resnet101_conv", "squeezenet"] if x == self.model_name)):
+        ds = AUDIOSET(self.data_path, mix_noise=self.mixin_noise,
+                      use_cache=self.use_cache)
+        if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
                     tat.MEL(n_mels=224),
@@ -181,13 +197,13 @@ class CFG(object):
             T = tat.Compose([
                     tat.LC2CL(),
                 ])
-        TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.transform = T
+        TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.target_transform = TT
-        if args.use_precompute:
-            ds.load_precompute(args.model_name)
-        dl = data.DataLoader(ds, batch_size=args.batch_size, drop_last=True,
-                             num_workers=args.num_workers, collate_fn=bce_collate,
+        if self.use_precompute:
+            ds.load_precompute(self.model_name)
+        dl = data.DataLoader(ds, batch_size=self.batch_size, drop_last=True,
+                             num_workers=self.num_workers, collate_fn=bce_collate,
                              shuffle=True)
         if "attn" in self.model_name:
             dl.collate_fn = sort_collate
@@ -200,29 +216,27 @@ class CFG(object):
         #    model = self.model.module
         model_list = self.model_list
         optimizers = []
-        criterion = None
+        criterion = nn.BCEWithLogitsLoss()
         epochs = None
-        if any((x for x in ["resnet34", "resnet101", "squeezenet"] if x == self.model_name)):
-            criterion = nn.CrossEntropyLoss()
+        if any(x in self.model_name for x in ["resnet34", "resnet101", "squeezenet"]):
             if "resnet34" in self.model_name:
                 epochs = [40, 100]
             elif "resnet101" in self.model_name:
                 epochs = [20, 50]
             elif "squeezenet" in self.model_name:
                 epochs = [100]
-            if any((x for x in ["resnet34", "resnet101"] if x == self.model_name)):
+            if any(x in self.model_name for x in ["resnet34", "resnet101"]):
                 optimizer_fc = torch.optim.Adam
                 optimizer_fc_params = model_list[0][1].fc.parameters()
                 optimizer_fc_kwargs = {"lr": 0.0001,}
                 optimizer_fc_precom = nn.Sequential(model_list[0][0],
                                                     *list(model_list[0][1].children())[:-1])
-                optimzers.append(optimizer_fc(optimizer_fc_params, **optimizer_fc_kwargs))
+                optimizers.append(optimizer_fc(optimizer_fc_params, **optimizer_fc_kwargs))
             optimizer_full = torch.optim.SGD
             optimizer_full_params = model_list[0].parameters()
             optimizer_full_kwargs = {"lr": 0.0001, "momentum": 0.9,}
             optimizers.append(optimizer_full(optimizer_full_params, **optimizer_full_kwargs))
-        elif any((x for x in ["attn", "bytenet"] if x == self.model_name)):
-            criterion = nn.CrossEntropyLoss()
+        elif any(x in self.model_name for x in ["attn", "bytenet"]):
             epochs = [100]
             if "attn" in self.model_name:
                 opt = torch.optim.RMSprop
@@ -252,33 +266,35 @@ class CFG(object):
                 pass
         return self.optimizer
 
-    def fit(self, epoch):
-        if any((x for x in ["resnet", "squeezenet"] if x in self.model_name)):
-            if args.use_precompute:
+    def fit(self, epoch, early_stop=None):
+        if any(x in self.model_name for x in ["resnet", "squeezenet"]):
+            if self.use_precompute:
                 pass # TODO implement network precomputation
                 #self.precompute(self.L["fc_layer"]["precompute"])
-            self.ds.set_split("train")
+            #self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             m = self.model_list[0]
             for i, (mb, tgts) in enumerate(self.dl):
+                if i == early_stop: break
                 m.train()
                 if self.use_cuda:
                     mb, tgts = mb.cuda(), tgts.cuda()
                 mb, tgts = Variable(mb), Variable(tgts)
                 m.zero_grad()
                 out = m(mb)
+                #print(out.size(), tgts.size())
                 loss = self.criterion(out, tgts)
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
                 print(loss.data[0])
-                if i % args.log_interval == 0 and args.validate and i != 0:
+                if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
-                self.ds.set_split("train")
+                #self.ds.set_split("train")
             self.train_losses.append(epoch_losses)
         if "attn" in self.model_name:
-            self.ds.set_split("train")
+            #self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             encoder = self.model_list[0]
@@ -301,7 +317,7 @@ class CFG(object):
                 encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
                 # Prepare input and output variables for decoder
-                dec_size = [[[0] * encoder.hidden_size]*1]*args.batch_size
+                dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
                 #print(encoder_output.data.new(dec_size).size())
                 enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
                 dec_i = Variable(enc_out_var.data.new(dec_size))
@@ -323,12 +339,12 @@ class CFG(object):
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
                 print(loss.data[0])
-                if i % args.log_interval == 0 and args.validate and i != 0:
+                if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
-                self.ds.set_split("train")
+                #self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
         if "bytenet" in self.model_name:
-            self.ds.set_split("train")
+            #self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             encoder = self.model[0]
@@ -350,17 +366,17 @@ class CFG(object):
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
                 print(loss.data[0])
-                if i % args.log_interval == 0 and args.validate and i != 0:
+                if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
-                self.ds.set_split("train")
+                #self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
 
 
     def validate(self, epoch):
-        if any((x for x in ["resnet", "squeezenet"] if x in self.model_name)):
+        if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
             m.eval()
-            self.ds.set_split("valid")
+            #self.ds.set_split("valid")
             running_validation_loss = 0
             correct = 0
             num_batches = len(self.dl)
@@ -374,7 +390,7 @@ class CFG(object):
                 running_validation_loss += loss_valid.data[0]
                 correct += (out_valid.data.max(1)[1] == tgts_valid.data).sum()
         elif "attn" in self.model_name:
-            self.ds.set_split("valid")
+            #self.ds.set_split("valid")
             running_validation_loss = 0
             correct = 0
             num_batches = len(self.dl)
@@ -396,7 +412,7 @@ class CFG(object):
                 encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
                 # Prepare input and output variables for decoder
-                dec_size = [[[0] * encoder.hidden_size]*1]*args.batch_size
+                dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
                 #print(encoder_output.data.new(dec_size).size())
                 enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
                 dec_i = Variable(enc_out_var.data.new(dec_size))
@@ -421,9 +437,9 @@ class CFG(object):
 
     def save(self, epoch):
         mstate = {
-            "models": [m.module if isinstance(m, nn.DataParallel) for m in self.model_list else m],
-            "optimizers": self.optimizers,
-            "epochs": epoch,
+            "models": [m.module.state_dict() if isinstance(m, nn.DataParallel) else m.state_dict() for m in self.model_list],
+            "optimizers": [o.module.state_dict() if isinstance(o, nn.DataParallel) else o.state_dict() for o in self.optimizers],
+            "epoch": epoch+1,
         }
         is_noisy = "_noisy" if self.mixin_noise else ""
         sname = "output/states/{}{}_{}.pt".format(self.model_name, is_noisy, epoch+1)
@@ -431,11 +447,11 @@ class CFG(object):
 
     def precompute(self, m):
         if "resnet" in self.model_name:
-            dl = data.DataLoader(self.ds, batch_size=args.batch_size,
-                                 num_workers=args.num_workers, shuffle=False)
+            dl = data.DataLoader(self.ds, batch_size=self.batch_size,
+                                 num_workers=self.num_workers, shuffle=False)
             m.eval()
             for splt in ["train", "valid"]:
-                self.ds.set_split(splt)
+                #self.ds.set_split(splt)
                 c = self.ds.splits[splt].start
                 for i, (mb, tgts) in enumerate(dl):
                     bs = mb.size(0)
