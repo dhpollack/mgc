@@ -200,6 +200,8 @@ class CFG(object):
         ds.transform = T
         TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.target_transform = TT
+        if self.use_cache:
+            ds.init_cache()
         if self.use_precompute:
             ds.load_precompute(self.model_name)
         dl = data.DataLoader(ds, batch_size=self.batch_size, drop_last=True,

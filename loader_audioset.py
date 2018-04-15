@@ -10,6 +10,7 @@ import shutil
 import json
 import csv
 import math
+import time
 from itertools import accumulate, chain
 
 # heavily inspired by:
@@ -111,8 +112,8 @@ class AUDIOSET(data.Dataset):
                            if k in tgt_tags])
 
         # TODO add cache
-        if self.use_cache:
-            self.cache = { fn: self._load_data(fn, load_from_cache=False) for fn in amanifest }
+        #if self.use_cache:
+        #    self.cache = { fn: self._load_data(fn, load_from_cache=False) for fn in amanifest }
 
         self.data = amanifest
         self.labels = labels
@@ -137,24 +138,33 @@ class AUDIOSET(data.Dataset):
             raise NotImplementedError
             #audio = self._add_noise(audio)
 
-        if self.transform is not None:
-            audio = self.transform(audio)
-
         if self.target_transform is not None:
             target = self.target_transform(target)
 
         return audio, target
 
+    def __len__(self):
+        return len(self.data)
+
     def _load_data(self, data_file, load_from_cache=False):
         ext = data_file.rsplit('.', 1)[1]
         if not load_from_cache:
             if ext in self.AUDIO_EXTS:
-                return torchaudio.load(data_file, normalization=True)
+                audio, sr = torchaudio.load(data_file, normalization=True)
+                if self.transform is not None:
+                    audio = self.transform(audio)
+                return audio, sr
         else:
             return self.cache[data_file]
 
-    def __len__(self):
-        return len(self.data)
+    def init_cache(self):
+        print("initializing cache...")
+        st = time.time()
+        self.cache = {}
+        for fn in self.data:
+            audio, sr = self._load_data(fn, load_from_cache=False)
+            self.cache[fn] = (audio, sr)
+        print("caching took {0:.2f}s to complete".format(time.time() - st))
 
     def _add_noise(self, audio):
         raise NotImplementedError
