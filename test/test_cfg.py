@@ -2,7 +2,7 @@ from cfg import *
 import time
 
 if __name__ == '__main__':
-    # python -m test.test_cfg --model-name squeezenet
+    # python -m test.test_cfg --model-name squeezenet --data-path /mnt/data/mgc/data/audioset --batch-size 10 --use-cache
     msg = ""
     config = CFG()
     train = config.fit
