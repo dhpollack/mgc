@@ -110,9 +110,13 @@ class AUDIOSET(data.Dataset):
             labels.append([tgt_tags[k]["label_id"] for k in segments[target_key]["tags"]
                            if k in tgt_tags])
 
-        self.data, self.labels = amanifest, labels
-
         # TODO add cache
+        if self.use_cache:
+            self.cache = { fn: self._load_data(fn, load_from_cache=False) for fn in amanifest }
+
+        self.data = amanifest
+        self.labels = labels
+
 
     def __getitem__(self, index):
         """
@@ -125,7 +129,7 @@ class AUDIOSET(data.Dataset):
 
         data_file = self.data[index]
 
-        audio, sr = self._load_data(data_file)
+        audio, sr = self._load_data(data_file, self.use_cache)
         target = self.labels[index]
         assert sr == 16000
 
@@ -141,13 +145,13 @@ class AUDIOSET(data.Dataset):
 
         return audio, target
 
-    def _load_data(self, data_file):
+    def _load_data(self, data_file, load_from_cache=False):
         ext = data_file.rsplit('.', 1)[1]
-        if ext in self.AUDIO_EXTS:
-            return torchaudio.load(data_file, normalization=True)
+        if not load_from_cache:
+            if ext in self.AUDIO_EXTS:
+                return torchaudio.load(data_file, normalization=True)
         else:
-            # TODO load from data files or cache
-            raise NotImplementedError
+            return self.cache[data_file]
 
     def __len__(self):
         return len(self.data)
