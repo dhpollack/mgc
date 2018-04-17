@@ -12,6 +12,7 @@ import csv
 import math
 import time
 from itertools import accumulate, chain
+from glob import glob
 
 # heavily inspired by:
 # https://github.com/patyork/python-voxforge-download/blob/master/python-voxforge-download.ipynb
@@ -48,7 +49,7 @@ class AUDIOSET(data.Dataset):
 
     def __init__(self, basedir="data/audioset", transform=None, target_transform=None,
                  dataset="balanced", split="train", use_cache=False, randomize=False,
-                 mix_noise=False, mix_prob=.5, mix_vol=.1):
+                 noises_dir=None, mix_prob=.5, mix_vol=.2):
 
         assert os.path.exists(basedir)
 
@@ -57,7 +58,7 @@ class AUDIOSET(data.Dataset):
         self.split = split
         self.use_cache = use_cache
         self.randomize = randomize
-        self.mix_noise = mix_noise
+        self.noises_dir = noises_dir
         self.mix_prob = mix_prob
         self.mix_vol = lambda: random.uniform(-1, 1) * 0.3 * mix_vol + mix_vol
         self.maxlen = 160013  # precalculated for balanced
@@ -67,12 +68,13 @@ class AUDIOSET(data.Dataset):
 
         ds_dict = self.DATASETS[dataset]
 
+        # get list of files from appropriate dataset (balanced/unbalanced)
         adir = os.path.join(basedir, ds_dict["dir"])
-        amanifest = [os.path.join(adir, fn) for fn in os.listdir(adir)]
+        amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
         num_files = len(amanifest)
         if randomize:
             random.shuffle(amanifest)
-
+        # get available classes for the Audioset dataset and add a 'no label' class
         with open(os.path.join(basedir, self.CLASSES_FILE), 'r', newline='') as f_classes:
             csvreader = csv.reader(f_classes, doublequote=True, skipinitialspace=True)
             next(csvreader, None);
@@ -87,7 +89,7 @@ class AUDIOSET(data.Dataset):
                 for i, (target_id, target_key, target_name) in enumerate(tgt_tags)
             }
         self.labels_dict = tgt_tags
-
+        # get the info on each segment (audio clip), including the label
         with open(os.path.join(basedir, ds_dict["segements_csv"]), 'r') as f_csv:
             target_keys = set(tgt_tags.keys())
             csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
@@ -104,20 +106,18 @@ class AUDIOSET(data.Dataset):
                 for target_key, st, fin, tags in segments
                 if set(tags.split(',')).intersection(target_keys)
             }
-
+        # for each audio clip create a list of the labels as integers (i.e. [3, 45])
         labels = []
         for audio_path in amanifest:
             target_key = os.path.basename(audio_path).split(".")[0]
             labels.append([tgt_tags[k]["label_id"] for k in segments[target_key]["tags"]
                            if k in tgt_tags])
-
-        # TODO add cache
-        #if self.use_cache:
-        #    self.cache = { fn: self._load_data(fn, load_from_cache=False) for fn in amanifest }
-
+        # save filename manifest and labels for the iterator
         self.data = amanifest
         self.labels = labels
 
+        if self.noises_dir:
+            self.noises = [fn for fn in glob(os.path.join(self.noises_dir, '*.*'))]
 
     def __getitem__(self, index):
         """
@@ -128,16 +128,16 @@ class AUDIOSET(data.Dataset):
             tuple: (audio, label) where target is index of the target class.
         """
 
-        data_file = self.data[index]
+        # get the filename at a particular index
+        fn = self.data[index]
 
-        audio, sr = self._load_data(data_file, self.use_cache)
+        # load either the file or the cache output of the file after any transformations
+        # Note: audio transformations are done in the _load_data function
+        audio, sr = self._load_data(fn, self.use_cache)
         target = self.labels[index]
-        assert sr == 16000
+        assert sr == 16000  # this can be removed for a generic algo
 
-        if self.split == "train" and self.mix_noise and self.mix_prob > random.random():
-            raise NotImplementedError
-            #audio = self._add_noise(audio)
-
+        # transform labels
         if self.target_transform is not None:
             target = self.target_transform(target)
 
@@ -147,10 +147,35 @@ class AUDIOSET(data.Dataset):
         return len(self.data)
 
     def _load_data(self, data_file, load_from_cache=False):
+        """
+            This function takes a filename as input and returns the audio data
+            after transformations and the sample rate of the audio.  We will also
+            lower the volume of any samples that are too loud.
+
+        Args:
+            data_file (str):  path to audio file.  For caching, we use the file
+                path as the key in a cache dictionary.
+
+            load_from_cache (bool):  switch to load from the cache or not.  In the
+                caching function, this is set to false, so the cache can be created.
+
+        Returns:
+            tuple (audio, sr):  The audio will be the tensor that goes into the
+                network as an input.  The sample rate, sr, is not really used,
+                but I check that the sample rates are all the same so if we add
+                any recorded noises, the tensors will align correctly.
+
+        """
         ext = data_file.rsplit('.', 1)[1]
         if not load_from_cache:
             if ext in self.AUDIO_EXTS:
                 audio, sr = torchaudio.load(data_file, normalization=True)
+                # check for max volume, this is relatively slow
+                amax = audio.max()
+                if amax > .7:
+                    audio *= .7 / amax
+                if self.split == "train" and self.noises_dir and self.mix_prob > random.random():
+                    audio = self._add_noise(audio, sr)
                 if self.transform is not None:
                     audio = self.transform(audio)
                 return audio, sr
@@ -166,27 +191,38 @@ class AUDIOSET(data.Dataset):
             self.cache[fn] = (audio, sr)
         print("caching took {0:.2f}s to complete".format(time.time() - st))
 
-    def _add_noise(self, audio):
-        raise NotImplementedError
+    def _add_noise(self, audio, audio_sr):
+        """
+            This is a simple additive noise mixer.  The signal of a randomly selected
+            noise is multiplied by a volume and then added to the input audio signal.
+
+        """
+        start = time.time()
         noise_path = random.choice(self.noises)
-        if noise_path in self.cache:
-            noise_sig, _ = self.cache[noise_path]
-        else:
-            noise_sig, _ = torchaudio.load(noise_path, normalization=True)
+        noise_sig, noise_sr = torchaudio.load(noise_path, normalization=True)
+        assert noise_sr == audio_sr
         diff = audio.size(0) - noise_sig.size(0)
         if diff > 0: # audio longer than noise
             st = random.randrange(0, diff)
             end = audio.size(0) - diff + st
             audio[st:end] += noise_sig * self.mix_vol()
         elif diff < 0:  # noise longer than audio
-            st = random.randrange(0, -diff)
+            st = random.randrange(0, -diff)  # diff is a negative number
             end = st + audio.size(0)
             audio += noise_sig[st:end] * self.mix_vol()
         else:
             audio += noise_sig * self.mix_vol()
+        #assert audio.min() > -1.  # this significantly slows loading
+        finish = time.time()
+        print("audio mixing took {0:.05f}".format(finish - start))
         return audio
 
     def find_max_len(self):
+        """
+            This function finds the maximum length of all audio samples in the dataset.
+            This is done naively and not necessarily efficiently.  Perhaps using something
+            like soxi would be a better solution.
+        """
         self.maxlen = 0
         for fp in self.data:
             sig, sr = self._load_data(fp)
@@ -198,8 +234,8 @@ def bce_collate(batch):
          batch: (list) [inputs, labels].  In this simple example, I'm just
             assuming the inputs are tensors and labels are strings
        Output:
-         minibatch: (Tensor)
-         targets: (list[str])
+         minibatch: (Tensor) N x *, where N is the size of the minibatch
+         targets: (Tensor) N x Classes, where Classes is the total number of classes
     """
 
     minibatch, targets = zip(*[(a, b) for (a,b) in batch])

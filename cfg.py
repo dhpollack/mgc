@@ -19,7 +19,7 @@ class CFG(object):
         self.save_model = args.save_model
         self.load_model = args.load_model
         self.chkpt_interval = args.chkpt_interval
-        self.mixin_noise = args.mixin_noise
+        self.noises_dir = args.noises_dir
         self.use_precompute = args.use_precompute
         self.use_cache = args.use_cache
         self.data_path = args.data_path
@@ -66,8 +66,8 @@ class CFG(object):
                             help='use cache in the dataloader')
         parser.add_argument('--use-precompute', action='store_true',
                             help='precompute transformations')
-        parser.add_argument('--mixin-noise', action='store_true',
-                            help='precompute transformations')
+        parser.add_argument('--noises-dir', type=str, default=None,
+                            help='absolute path of noises to add to the audio')
         parser.add_argument('--num-workers', type=int, default=0,
                             help='number of workers for data loader')
         parser.add_argument('--validate', action='store_true',
@@ -146,7 +146,7 @@ class CFG(object):
         return model_list
 
     def get_dataloader(self):
-        ds = AUDIOSET(self.data_path, mix_noise=self.mixin_noise,
+        ds = AUDIOSET(self.data_path, noises_dir=self.noises_dir,
                       use_cache=self.use_cache)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
@@ -443,7 +443,7 @@ class CFG(object):
             "optimizers": [o.module.state_dict() if isinstance(o, nn.DataParallel) else o.state_dict() for o in self.optimizers],
             "epoch": epoch+1,
         }
-        is_noisy = "_noisy" if self.mixin_noise else ""
+        is_noisy = "_noisy" if self.noises_dir else ""
         sname = "output/states/{}{}_{}.pt".format(self.model_name, is_noisy, epoch+1)
         torch.save(mstate, sname)
 
