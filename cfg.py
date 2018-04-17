@@ -49,6 +49,7 @@ class CFG(object):
             self.model_list = [nn.DataParallel(m).cuda() for m in self.model_list]
         self.valid_losses = []
         self.train_losses = []
+        self.tqdmiter = None
 
     def get_params(self):
         parser = argparse.ArgumentParser(description='PyTorch Language ID Classifier Trainer')
@@ -259,14 +260,15 @@ class CFG(object):
         grenz = 0
         for i, v in enumerate(self.epochs):
             grenz += v
-            if epoch == 0:
+            if epoch < grenz:
                 return self.optimizers[0]
             elif epoch == grenz:
-                print("Using new optimizer: {}".format(self.optimizers[i+1]))
+                self.tqdmiter.write("Using new optimizer: {}".format(self.optimizers[i+1]))
                 return self.optimizers[i+1]
             else:
                 pass
-        return self.optimizer
+        self.tqdmiter.write("something went wrong, this should not condition should not be reached...")
+        return self.optimizers[-1]
 
     def fit(self, epoch, early_stop=None):
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
@@ -290,7 +292,11 @@ class CFG(object):
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
-                print(loss.data[0])
+                if self.tqdmiter:
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.refresh()
+                else:
+                    print(loss.data[0])
                 if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
                 #self.ds.set_split("train")
@@ -340,7 +346,11 @@ class CFG(object):
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
-                print(loss.data[0])
+                if self.tqdmiter:
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.refresh()
+                else:
+                    print(loss.data[0])
                 if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
                 #self.ds.set_split("train")
@@ -367,7 +377,11 @@ class CFG(object):
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.data[0])
-                print(loss.data[0])
+                if self.tqdmiter:
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.refresh()
+                else:
+                    print(loss.data[0])
                 if i % self.log_interval == 0 and self.validate and i != 0:
                     self.validate(epoch)
                 #self.ds.set_split("train")
@@ -432,7 +446,10 @@ class CFG(object):
                 correct += (dec_o.data.max(1)[1] == tgts.data).sum()
 
         self.valid_losses.append((running_validation_loss / num_batches, correct / len(self.ds)))
-        print("loss: {}, acc: {}".format(running_validation_loss / num_batches, correct / len(self.ds)))
+        if self.tqdmiter:
+            self.tqdmiter.write("loss: {}, acc: {}".format(running_validation_loss / num_batches, correct / len(self.ds)))
+        else:
+            print("loss: {}, acc: {}".format(running_validation_loss / num_batches, correct / len(self.ds)))
 
     def get_train(self):
         return self.fit
