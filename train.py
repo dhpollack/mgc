@@ -10,7 +10,7 @@ if __name__ == '__main__':
     save = config.save
     cur_epoch = config.cur_epoch
     epochs = sum(config.epochs)
-    with tqdm(range(cur_epoch, epochs), total=epochs, leave=True,
+    with tqdm(range(cur_epoch, epochs), total=epochs, initial=cur_epoch, leave=True,
               postfix={"epoch": cur_epoch, "loss": "{0:.6f}".format(0.)}) as t:
         config.tqdmiter = t
         for epoch in t:
