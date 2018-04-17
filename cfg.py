@@ -254,6 +254,12 @@ class CFG(object):
         if weights is not None:
             for i, sd in enumerate(weights):
                 optimizers[i].load_state_dict(sd)
+                # https://github.com/pytorch/pytorch/issues/2830, fixed in master?
+                for state in optimizers[i].state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v):
+                            state[k] = v.cuda()
+
         return epochs, criterion, optimizers
 
     def get_optimizer(self, epoch):
