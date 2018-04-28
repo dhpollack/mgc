@@ -26,6 +26,8 @@ class AUDIOSET(data.Dataset):
         basedir (string): Root directory of dataset.
     """
 
+    NUM_VALID_SAMPLES = 100
+
     NOISES = ("noises", 'http://web.cse.ohio-state.edu/pnl/corpus/HuNonspeech/Nonspeech.zip')
 
     SPLITS = ["train", "valid", "test"]
@@ -40,6 +42,10 @@ class AUDIOSET(data.Dataset):
         "unbalanced": {
             "dir": "processed/unbalanced",
             "segements_csv": "unbalanced_train_segments.csv",
+        },
+        "eval": {
+            "dir": "processed/eval",
+            "segements_csv": "eval_segments.csv",
         }
     }
 
@@ -62,18 +68,12 @@ class AUDIOSET(data.Dataset):
         self.mix_prob = mix_prob
         self.mix_vol = lambda: random.uniform(-1, 1) * 0.3 * mix_vol + mix_vol
         self.maxlen = 160013  # precalculated for balanced
+        self.data = {}
+        self.labels = {}
 
         self.transform = transform
         self.target_transform = target_transform
 
-        ds_dict = self.DATASETS[dataset]
-
-        # get list of files from appropriate dataset (balanced/unbalanced)
-        adir = os.path.join(basedir, ds_dict["dir"])
-        amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
-        num_files = len(amanifest)
-        if randomize:
-            random.shuffle(amanifest)
         # get available classes for the Audioset dataset and add a 'no label' class
         with open(os.path.join(basedir, self.CLASSES_FILE), 'r', newline='') as f_classes:
             csvreader = csv.reader(f_classes, doublequote=True, skipinitialspace=True)
@@ -89,35 +89,53 @@ class AUDIOSET(data.Dataset):
                 for i, (target_id, target_key, target_name) in enumerate(tgt_tags)
             }
         self.labels_dict = tgt_tags
-        # get the info on each segment (audio clip), including the label
-        with open(os.path.join(basedir, ds_dict["segements_csv"]), 'r') as f_csv:
-            target_keys = set(tgt_tags.keys())
-            csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
-            # skip first three rows
-            next(csvreader, None);next(csvreader, None);next(csvreader, None);
-            segments = [row for row in csvreader]
-            # balanced goes from 22160 to 3146
-            segments = {
-                target_key: {
-                    "st": float(st),
-                    "fin": float(fin),
-                    "tags": tags.split(",")
-                }
-                for target_key, st, fin, tags in segments
-                if set(tags.split(',')).intersection(target_keys)
-            }
-        # for each audio clip create a list of the labels as integers (i.e. [3, 45])
-        labels = []
-        for audio_path in amanifest:
-            target_key = os.path.basename(audio_path).split(".")[0]
-            labels.append([tgt_tags[k]["label_id"] for k in segments[target_key]["tags"]
-                           if k in tgt_tags])
-        # save filename manifest and labels for the iterator
-        self.data = amanifest
-        self.labels = labels
-
+        # setup noise files
         if self.noises_dir:
             self.noises = [fn for fn in glob(os.path.join(self.noises_dir, '*.*'))]
+
+        # get list of files from appropriate dataset (balanced/unbalanced)
+        ds_dict = self.DATASETS[dataset]
+        amanifest, labels = self._init_set(ds_dict, self.randomize)
+        self.data[self.split] = amanifest
+        self.labels[self.split] = labels
+
+    def init_cache(self):
+        print("initializing cache...")
+        st = time.time()
+        self.cache = {}
+        for fn in self.data:
+            audio, sr = self._load_data(fn, load_from_cache=False)
+            self.cache[fn] = (audio, sr)
+        print("caching took {0:.2f}s to complete".format(time.time() - st))
+
+    def find_max_len(self):
+        """
+            This function finds the maximum length of all audio samples in the dataset.
+            This is done naively and not necessarily efficiently.  Perhaps using something
+            like soxi would be a better solution.
+        """
+        self.maxlen = 0
+        for fp in self.data[self.split]:
+            sig, sr = self._load_data(fp)
+            self.maxlen = sig.size(0) if sig.size(0) > self.maxlen else self.maxlen
+
+    def set_split(self, split):
+        map_split = {
+            "train":"balanced",
+            "valid":"eval",
+            "test":"unbalanced",
+        }
+        if split not in self.labels:
+            # do special stuff for validation
+            randomize = True if split == "valid" else self.randomize
+            limit = self.NUM_VALID_SAMPLES if split == "valid" else None
+            # begin initialization
+            ds_name = map_split[split]
+            ds_dict = self.DATASETS[ds_name]
+            d, l = self._init_set(ds_dict, randomize, limit)
+            self.data[split] = d
+            self.labels[split] = l
+        self.split = split
 
     def __getitem__(self, index):
         """
@@ -128,13 +146,15 @@ class AUDIOSET(data.Dataset):
             tuple: (audio, label) where target is index of the target class.
         """
 
+        # get targets
+        target = self.labels[self.split][index]
+
         # get the filename at a particular index
-        fn = self.data[index]
+        fn = self.data[self.split][index]
 
         # load either the file or the cache output of the file after any transformations
         # Note: audio transformations are done in the _load_data function
         audio, sr = self._load_data(fn, self.use_cache)
-        target = self.labels[index]
         assert sr == 16000  # this can be removed for a generic algo
 
         # transform labels
@@ -144,7 +164,7 @@ class AUDIOSET(data.Dataset):
         return audio, target
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data[self.split])
 
     def _load_data(self, data_file, load_from_cache=False):
         """
@@ -182,15 +202,6 @@ class AUDIOSET(data.Dataset):
         else:
             return self.cache[data_file]
 
-    def init_cache(self):
-        print("initializing cache...")
-        st = time.time()
-        self.cache = {}
-        for fn in self.data:
-            audio, sr = self._load_data(fn, load_from_cache=False)
-            self.cache[fn] = (audio, sr)
-        print("caching took {0:.2f}s to complete".format(time.time() - st))
-
     def _add_noise(self, audio, audio_sr):
         """
             This is a simple additive noise mixer.  The signal of a randomly selected
@@ -217,16 +228,38 @@ class AUDIOSET(data.Dataset):
         print("audio mixing took {0:.05f}".format(finish - start))
         return audio
 
-    def find_max_len(self):
-        """
-            This function finds the maximum length of all audio samples in the dataset.
-            This is done naively and not necessarily efficiently.  Perhaps using something
-            like soxi would be a better solution.
-        """
-        self.maxlen = 0
-        for fp in self.data:
-            sig, sr = self._load_data(fp)
-            self.maxlen = sig.size(0) if sig.size(0) > self.maxlen else self.maxlen
+    def _init_set(self, ds_dict, randomize, limit=None):
+        adir = os.path.join(self.basedir, ds_dict["dir"])
+        amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
+        num_files = len(amanifest)
+        if randomize:
+            random.shuffle(amanifest)
+        if limit:
+            amanifest = amanifest[:limit]
+        # get the info on each segment (audio clip), including the label
+        with open(os.path.join(self.basedir, ds_dict["segements_csv"]), 'r') as f_csv:
+            target_keys = set(self.labels_dict.keys())
+            csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
+            # skip first three rows
+            next(csvreader, None);next(csvreader, None);next(csvreader, None);
+            segments = [row for row in csvreader]
+            # balanced goes from 22160 to 3146
+            segments = {
+                target_key: {
+                    "st": float(st),
+                    "fin": float(fin),
+                    "tags": tags.split(",")
+                }
+                for target_key, st, fin, tags in segments
+                if set(tags.split(',')).intersection(target_keys)
+            }
+        # for each audio clip create a list of the labels as integers (i.e. [3, 45])
+        labels = []
+        for audio_path in amanifest:
+            target_key = os.path.basename(audio_path).split(".")[0]
+            labels.append([self.labels_dict[k]["label_id"] for k in segments[target_key]["tags"]
+                           if k in self.labels_dict])
+        return amanifest, labels
 
 def bce_collate(batch):
     """Puts batch of inputs into a tensor and labels into a list

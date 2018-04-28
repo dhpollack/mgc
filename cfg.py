@@ -10,6 +10,7 @@ import torchvision.transforms as tvt
 import mgc_transforms
 from loader_audioset import *
 import math
+from tqdm import tqdm
 
 class CFG(object):
     def __init__(self):
@@ -29,6 +30,7 @@ class CFG(object):
         self.do_validate = args.validate
         self.max_len = 160000  # 10 secs
         self.use_cuda = torch.cuda.is_available()
+        self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.ngpu = torch.cuda.device_count()
         print("CUDA: {} with {} devices".format(self.use_cuda, self.ngpu))
         self.model_name = args.model_name
@@ -46,7 +48,7 @@ class CFG(object):
         self.ds, self.dl = self.get_dataloader()
         self.epochs, self.criterion, self.optimizers = self.init_optimizer(state_dicts["optimizers"])
         if self.ngpu > 1:
-            self.model_list = [nn.DataParallel(m).cuda() for m in self.model_list]
+            self.model_list = [nn.DataParallel(m) for m in self.model_list]
         self.valid_losses = []
         self.train_losses = []
         self.tqdmiter = None
@@ -136,14 +138,13 @@ class CFG(object):
             }
             model_list = models.bytenet.bytenet(kwargs_encoder, kwargs_decoder)
         # move model to GPU or multi-GPU
-        if self.use_cuda:
-            model_list = [m.cuda() for m in model_list]
+        model_list = [m.to(self.device) for m in model_list]
         # load weights
         if weights is not None:
             for i, sd in enumerate(weights):
                 model_list[i].load_state_dict(sd)
         #if self.ngpu > 1:
-        #    model_list = [nn.DataParallel(m).cuda() for m in model_list]
+        #    model_list = [nn.DataParallel(m) for m in model_list]
         return model_list
 
     def get_dataloader(self):
@@ -258,7 +259,8 @@ class CFG(object):
                 for state in optimizers[i].state.values():
                     for k, v in state.items():
                         if torch.is_tensor(v):
-                            state[k] = v.cuda()
+                            v = v.to(self.device)
+                            state[k] = v
 
         return epochs, criterion, optimizers
 
@@ -281,35 +283,33 @@ class CFG(object):
             if self.use_precompute:
                 pass # TODO implement network precomputation
                 #self.precompute(self.L["fc_layer"]["precompute"])
-            #self.ds.set_split("train")
+            self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             m = self.model_list[0]
             for i, (mb, tgts) in enumerate(self.dl):
                 if i == early_stop: break
                 m.train()
-                if self.use_cuda:
-                    mb, tgts = mb.cuda(), tgts.cuda()
-                mb, tgts = Variable(mb), Variable(tgts)
+                mb, tgts = mb.to(self.device), tgts.to(self.device)
                 m.zero_grad()
                 out = m(mb)
                 #print(out.size(), tgts.size())
                 loss = self.criterion(out, tgts)
                 loss.backward()
                 self.optimizer.step()
-                epoch_losses.append(loss.data[0])
+                epoch_losses.append(loss.item())
                 if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
                     self.tqdmiter.refresh()
                 else:
-                    print(loss.data[0])
+                    print(epoch_losses[-1])
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     with torch.no_grad():
                         self.validate(epoch)
-                #self.ds.set_split("train")
+                self.ds.set_split("train")
             self.train_losses.append(epoch_losses)
         if "attn" in self.model_name:
-            #self.ds.set_split("train")
+            self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             encoder = self.model_list[0]
@@ -323,20 +323,22 @@ class CFG(object):
                 decoder.zero_grad()
 
                 # set inputs and targets
-                if self.use_cuda:
-                    mb, tgts = mb.cuda(), tgts.cuda()
-                mb = pack(Variable(mb), lengths, batch_first=True)
-                tgts = Variable(tgts)
+                mb, tgts = mb.to(self.device), tgts.to(self.device)
+
+                # create the initial hidden input before packing sequence
+                encoder_hidden = encoder.initHidden(mb)
+
+                # pack sequence
+                mb = pack(mb, lengths, batch_first=True)
                 #print(mb.size(), tgts.size())
-                encoder_hidden = encoder.initHidden(input_type)
+                # encode sequence
                 encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
                 # Prepare input and output variables for decoder
-                dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
-                #print(encoder_output.data.new(dec_size).size())
+                #dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
+                #print(encoder_output.detach().new(dec_size).size())
                 enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
-                dec_i = Variable(enc_out_var.data.new(dec_size))
-                #dec_i = Variable(encoder_output.data.new(dec_size))
+                dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
                 dec_h = encoder_hidden # Use last (forward) hidden state from encoder
                 #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
@@ -347,23 +349,23 @@ class CFG(object):
                 #print(dec_o.view(-1, decoder.output_size).size(), tgts.view(-1).size())
 
                 # calculate loss and backprop
-                loss = self.criterion(dec_o.view(-1, decoder.output_size), tgts.view(-1))
+                loss = self.criterion(dec_o, tgts)
                 #nn.utils.clip_grad_norm(encoder.parameters(), 0.05)
                 #nn.utils.clip_grad_norm(decoder.parameters(), 0.05)
                 loss.backward()
                 self.optimizer.step()
-                epoch_losses.append(loss.data[0])
+                epoch_losses.append(loss.item())
                 if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
                     self.tqdmiter.refresh()
                 else:
-                    print(loss.data[0])
+                    print(epoch_losses[-1])
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     self.validate(epoch)
-                #self.ds.set_split("train")
+                self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
         if "bytenet" in self.model_name:
-            #self.ds.set_split("train")
+            self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
             encoder = self.model[0]
@@ -375,23 +377,21 @@ class CFG(object):
                 encoder.zero_grad()
                 decoder.zero_grad()
                 # set inputs and targets
-                if self.use_cuda:
-                    mb, tgts = mb.cuda(), tgts.cuda()
-                mb, tgts = Variable(mb), Variable(tgts)
+                mb, tgts = mb.to(self.device), tgts.to(self.device)
                 mb = encoder(mb)
                 out = decoder(mb)
                 loss = criterion(out, tgts) # ach, alles für Bilder. fixed in master for 0.3.0 use (out.unsqueeze(2), tgts.unsqueeze(1))
                 loss.backward()
                 self.optimizer.step()
-                epoch_losses.append(loss.data[0])
+                epoch_losses.append(loss.item())
                 if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(loss.data[0])})
+                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
                     self.tqdmiter.refresh()
                 else:
-                    print(loss.data[0])
+                    print(epoch_losses[-1])
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     self.validate(epoch)
-                #self.ds.set_split("train")
+                self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
 
 
@@ -399,64 +399,63 @@ class CFG(object):
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
             m.eval()
-            #self.ds.set_split("valid")
+            self.ds.set_split("valid")
             running_validation_loss = 0
             correct = 0
             num_batches = len(self.dl)
-            for mb_valid, tgts_valid in self.dl:
-                if self.use_cuda:
-                    mb_valid, tgts_valid = mb_valid.cuda(), tgts_valid.cuda()
-                mb_valid, tgts_valid = Variable(mb_valid), Variable(tgts_valid)
-                out_valid = m(mb_valid)
-                out_valid, tgts_valid = out_valid.cpu(), tgts_valid.cpu()
-                loss_valid = self.criterion(out_valid, tgts_valid)
-                running_validation_loss += loss_valid.data[0]
-                correct += (out_valid.data.max(1)[1] == tgts_valid.data).sum()
+            with tqdm(total=num_batches, leave=False, position=1,
+                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+                for mb_valid, tgts_valid in self.dl:
+                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
+                    out_valid = m(mb_valid)
+                    out_valid, tgts_valid = out_valid.to(torch.device("cpu")), tgts_valid.to(torch.device("cpu"))
+                    loss_valid = self.criterion(out_valid, tgts_valid)
+                    running_validation_loss += loss_valid.item()
+                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(loss_valid.item())})
+                    t.update()
+                    #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
         elif "attn" in self.model_name:
-            #self.ds.set_split("valid")
+            self.ds.set_split("valid")
             running_validation_loss = 0
             correct = 0
             num_batches = len(self.dl)
             encoder = self.model_list[0]
             decoder = self.model_list[1]
             input_type = torch.FloatTensor
-            for i, ((mb, lengths), tgts) in enumerate(self.dl):
-                # set model into train mode and clear gradients
-                encoder.eval()
-                decoder.eval()
+            with tqdm(total=num_batches, leave=False, position=1,
+                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+                for i, ((mb, lengths), tgts) in enumerate(self.dl):
+                    # set model into train mode and clear gradients
+                    encoder.eval()
+                    decoder.eval()
 
-                # set inputs and targets
-                if self.use_cuda:
-                    mb, tgts = mb.cuda(), tgts.cuda()
-                mb = pack(Variable(mb), lengths, batch_first=True)
-                tgts = Variable(tgts)
-                #print(mb.size(), tgts.size())
-                encoder_hidden = encoder.initHidden(input_type)
-                encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
+                    # set inputs and targets
+                    mb, tgts = mb.to(self.device), tgts.to(self.device)
+                    mb = pack(mb, lengths, batch_first=True)
+                    #print(mb.size(), tgts.size())
+                    encoder_hidden = encoder.initHidden(input_type)
+                    encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
-                # Prepare input and output variables for decoder
-                dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
-                #print(encoder_output.data.new(dec_size).size())
-                enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
-                dec_i = Variable(enc_out_var.data.new(dec_size))
-                #dec_i = Variable(encoder_output.data.new(dec_size))
-                dec_h = encoder_hidden # Use last (forward) hidden state from encoder
-                #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
+                    # Prepare input and output variables for decoder
+                    dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
+                    #print(encoder_output.detach().new(dec_size).size())
+                    enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
+                    dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
+                    dec_h = encoder_hidden # Use last (forward) hidden state from encoder
+                    #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
-                # run through decoder in one shot
-                dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
-                # calculate loss and backprop
-                dec_o, tgts = dec_o.cpu(), tgts.cpu()
-                dec_o = dec_o.view(-1, decoder.output_size)
-                loss = self.criterion(dec_o, tgts.view(-1))
-                running_validation_loss += loss.data[0]
-                correct += (dec_o.data.max(1)[1] == tgts.data).sum()
+                    # run through decoder in one shot
+                    dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
+                    # calculate loss and backprop
+                    dec_o, tgts = dec_o.to(torch.device("cpu")), tgts.to(torch.device("cpu"))
+                    dec_o = dec_o.view(-1, decoder.output_size)
+                    loss = self.criterion(dec_o, tgts.view(-1))
+                    running_validation_loss += loss.item()
+                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(loss_valid.item())})
+                    t.update()
+                    #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
 
         self.valid_losses.append((running_validation_loss / num_batches, correct / len(self.ds)))
-        if self.tqdmiter:
-            self.tqdmiter.write("loss: {}, acc: {}".format(running_validation_loss / num_batches, correct / len(self.ds)))
-        else:
-            print("loss: {}, acc: {}".format(running_validation_loss / num_batches, correct / len(self.ds)))
 
     def get_train(self):
         return self.fit
@@ -477,18 +476,17 @@ class CFG(object):
                                  num_workers=self.num_workers, shuffle=False)
             m.eval()
             for splt in ["train", "valid"]:
-                #self.ds.set_split(splt)
+                self.ds.set_split(splt)
                 c = self.ds.splits[splt].start
                 for i, (mb, tgts) in enumerate(dl):
                     bs = mb.size(0)
-                    if self.use_cuda:
-                        mb = mb.cuda()
-                    mb = Variable(mb)
+                    mb = mb.to(self.device)
                     m.zero_grad()
-                    out = m(mb).data.cpu()
+                    out = m(mb).to(torch.device("cpu"))
+                    out = out.detach()
                     for j_i, j_k in enumerate(range(c, c+bs)):
                         idx_split = self.ds.splits[splt][j_k]
-                        k = self.ds.data[idx_split]
+                        k = self.ds.detach()[idx_split]
                         self.ds.cache[k] = (out[j_i], tgts[j_i])
                     c += bs
 

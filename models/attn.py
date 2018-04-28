@@ -19,11 +19,8 @@ class EncoderRNN(nn.Module):
         #print("encoder:", output.size(), hidden.size())
         return output, hidden
 
-    def initHidden(self, ttype=None):
-        if ttype == None:
-            ttype = torch.FloatTensor
-        result = Variable(ttype(self.n_layers * 1, self.batch_size, self.hidden_size).fill_(0))
-        return result.cuda() if torch.cuda.is_available() else result
+    def initHidden(self, input):
+        return input.new_zeros((self.n_layers * 1, self.batch_size, self.hidden_size))
 
 class Attn(nn.Module):
     def __init__(self, hidden_size, batch_size=1, method="dot"):
@@ -57,7 +54,7 @@ class Attn(nn.Module):
             return energy
 
         elif self.method == 'concat':
-            hidden = hidden * Variable(encoder_output.data.new(encoder_output.size()).fill_(1)) # broadcast hidden to encoder_outputs size
+            hidden = hidden * encoder_output.new_ones(encoder_output.size()) # broadcast hidden to encoder_outputs size
             energy = self.attn(torch.cat((hidden, encoder_output), -1))
             energy = energy.transpose(2, 1)
             energy = self.v.bmm(energy)
