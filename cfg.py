@@ -26,7 +26,7 @@ class CFG(object):
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
         self.log_interval = args.log_interval
-        self.validate = args.validate
+        self.do_validate = args.validate
         self.max_len = 160000  # 10 secs
         self.use_cuda = torch.cuda.is_available()
         self.ngpu = torch.cuda.device_count()
@@ -303,8 +303,9 @@ class CFG(object):
                     self.tqdmiter.refresh()
                 else:
                     print(loss.data[0])
-                if i % self.log_interval == 0 and self.validate and i != 0:
-                    self.validate(epoch)
+                if i % self.log_interval == 0 and self.do_validate and i != 0:
+                    with torch.no_grad():
+                        self.validate(epoch)
                 #self.ds.set_split("train")
             self.train_losses.append(epoch_losses)
         if "attn" in self.model_name:
@@ -357,7 +358,7 @@ class CFG(object):
                     self.tqdmiter.refresh()
                 else:
                     print(loss.data[0])
-                if i % self.log_interval == 0 and self.validate and i != 0:
+                if i % self.log_interval == 0 and self.do_validate and i != 0:
                     self.validate(epoch)
                 #self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
@@ -388,7 +389,7 @@ class CFG(object):
                     self.tqdmiter.refresh()
                 else:
                     print(loss.data[0])
-                if i % self.log_interval == 0 and self.validate and i != 0:
+                if i % self.log_interval == 0 and self.do_validate and i != 0:
                     self.validate(epoch)
                 #self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
