@@ -104,7 +104,7 @@ class AUDIOSET(data.Dataset):
         print("initializing cache...")
         st = time.time()
         self.cache = {}
-        for fn in self.data:
+        for fn in self.data[self.split]:
             audio, sr = self._load_data(fn, load_from_cache=False)
             self.cache[fn] = (audio, sr)
         print("caching took {0:.2f}s to complete".format(time.time() - st))
