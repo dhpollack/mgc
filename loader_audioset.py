@@ -99,6 +99,8 @@ class AUDIOSET(data.Dataset):
         amanifest, labels = self._init_set(ds_dict, self.randomize)
         self.data[self.split] = amanifest
         self.labels[self.split] = labels
+        if self.use_cache:
+            self.init_cache()
 
     def init_cache(self):
         print("initializing cache...")
@@ -126,7 +128,7 @@ class AUDIOSET(data.Dataset):
             "valid":"eval",
             "test":"unbalanced",
         }
-        if split not in self.labels:
+        if split not in self.labels:  # and not in self.data
             # do special stuff for validation
             randomize = True if split == "valid" else self.randomize
             limit = self.NUM_VALID_SAMPLES if split == "valid" else None
@@ -137,6 +139,8 @@ class AUDIOSET(data.Dataset):
             self.data[split] = d
             self.labels[split] = l
         self.split = split
+        if self.use_cache:
+            self.init_cache()
 
     def __getitem__(self, index):
         """
