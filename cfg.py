@@ -78,6 +78,8 @@ class CFG(object):
                             help='number of workers for data loader')
         parser.add_argument('--validate', action='store_true',
                             help='do out-of-bag validation')
+        parser.add_argument('--num-validate', type=int, default=None,
+                            help='number of validation samples')
         parser.add_argument('--log-interval', type=int, default=5,
                             help='reports per epoch')
         parser.add_argument('--chkpt-interval', type=int, default=10,
@@ -155,13 +157,14 @@ class CFG(object):
     def get_dataloader(self):
         ds = AUDIOSET(self.data_path, noises_dir=self.noises_dir,
                       use_cache=self.use_cache)
+        ds.NUM_VALID_SAMPLES = self.args.num_validate
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
-                    tat.MEL(n_mels=224),
+                    tat.MEL(n_mels=self.args.freq_bands),
                     tat.BLC2CBL(),
                     tvt.ToPILImage(),
-                    tvt.Resize((224, 224)),
+                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
                     tvt.ToTensor(),
                 ])
         elif "_mfcc" in self.model_name:
@@ -190,7 +193,7 @@ class CFG(object):
                     mgc_transforms.DummyDim(),
                     tat.BLC2CBL(),
                     tvt.ToPILImage(),
-                    tvt.Resize((224, 224)),
+                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
                     tvt.ToTensor(),
                 ])
         elif "attn" in self.model_name:
