@@ -99,7 +99,8 @@ class AUDIOSET(data.Dataset):
         amanifest, labels = self._init_set(ds_dict, self.randomize)
         self.data[self.split] = amanifest
         self.labels[self.split] = labels
-        if self.use_cache:
+        # only initialize cache if first file not found in cache
+        if self.use_cache and self.data[self.split][0] not in self.cache:
             self.init_cache()
 
     def init_cache(self):
@@ -139,7 +140,8 @@ class AUDIOSET(data.Dataset):
             self.data[split] = d
             self.labels[split] = l
         self.split = split
-        if self.use_cache:
+        # only initialize cache if first file not found in cache
+        if self.use_cache and self.data[self.split][0] not in self.cache:
             self.init_cache()
 
     def __getitem__(self, index):
