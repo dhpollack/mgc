@@ -55,7 +55,8 @@ class AUDIOSET(data.Dataset):
 
     def __init__(self, basedir="data/audioset", transform=None, target_transform=None,
                  dataset="balanced", split="train", use_cache=False, randomize=False,
-                 noises_dir=None, mix_prob=.5, mix_vol=.2):
+                 noises_dir=None, mix_prob=.5, mix_vol=.2,
+                 otype='long'):
 
         assert os.path.exists(basedir)
 
@@ -261,7 +262,7 @@ class AUDIOSET(data.Dataset):
                            if k in self.labels_dict])
         return amanifest, labels
 
-def bce_collate(batch):
+def bce_collate(batch, type='long'):
     """Puts batch of inputs into a tensor and labels into a list
        Args:
          batch: (list) [inputs, labels].  In this simple example, I'm just

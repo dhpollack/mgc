@@ -2,6 +2,7 @@ import argparse
 import sys
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence as pack, pad_packed_sequence as unpack
 from torch.autograd import Variable
 import models
@@ -10,6 +11,7 @@ import torchvision.transforms as tvt
 import mgc_transforms
 from loader_audioset import *
 import math
+import numpy as np
 from tqdm import tqdm
 
 class CFG(object):
@@ -34,6 +36,7 @@ class CFG(object):
         self.ngpu = torch.cuda.device_count()
         print("CUDA: {} with {} devices".format(self.use_cuda, self.ngpu))
         self.model_name = args.model_name
+        self.loss_criterion = args.loss_criterion
         # load weights
         if args.load_model:
             state_dicts = torch.load(args.load_model, map_location=lambda storage, loc: storage)
@@ -80,7 +83,9 @@ class CFG(object):
         parser.add_argument('--chkpt-interval', type=int, default=10,
                             help='how often to save checkpoints')
         parser.add_argument('--model-name', type=str, default="resnet34_conv",
-                            help='data path')
+                            help='name of model to use')
+        parser.add_argument('--loss-criterion', type=str, default="bce",
+                            help='loss criterion')
         parser.add_argument('--load-model', type=str, default=None,
                             help='path of model to load')
         parser.add_argument('--save-model', action='store_true',
@@ -104,7 +109,7 @@ class CFG(object):
         elif "attn" in self.model_name:
             self.hidden_size = 500
             kwargs_encoder = {
-                "input_size": self.freq_bands,
+                "input_size": self.args.freq_bands,
                 "hidden_size": self.hidden_size,
                 "n_layers": 1,
                 "batch_size": self.batch_size
@@ -159,7 +164,7 @@ class CFG(object):
                     tvt.Resize((224, 224)),
                     tvt.ToTensor(),
                 ])
-        elif self.model_name == "resnet34_mfcc":
+        elif "_mfcc" in self.model_name:
             sr = 16000
             ws = 800
             hs = ws // 2
@@ -220,7 +225,12 @@ class CFG(object):
         #    model = self.model.module
         model_list = self.model_list
         optimizers = []
-        criterion = nn.BCEWithLogitsLoss()
+        if self.loss_criterion == "softmargin":
+            criterion = nn.MultiLabelSoftMarginLoss()
+        elif self.loss_criterion == "margin":
+            criterion = nn.MultiLabelMarginLoss()
+        else:
+            criterion = nn.BCEWithLogitsLoss()
         epochs = None
         if any(x in self.model_name for x in ["resnet34", "resnet101", "squeezenet"]):
             if "resnet34" in self.model_name:
@@ -293,6 +303,10 @@ class CFG(object):
                 mb, tgts = mb.to(self.device), tgts.to(self.device)
                 m.zero_grad()
                 out = m(mb)
+                if "margin" in self.loss_criterion:
+                    out = F.sigmoid(out)
+                if self.loss_criterion == "margin":
+                    tgts = tgts.long()
                 #print(out.size(), tgts.size())
                 loss = self.criterion(out, tgts)
                 loss.backward()
@@ -344,11 +358,16 @@ class CFG(object):
 
                 # run through decoder in one shot
                 dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
+                dec_o.squeeze_()
                 #print(dec_o)
-                #print(dec_o.size(), dec_h.size(), dec_attn.size())
+                #print(dec_o.size(), dec_h.size(), dec_attn.size(), tgts.size())
                 #print(dec_o.view(-1, decoder.output_size).size(), tgts.view(-1).size())
 
                 # calculate loss and backprop
+                if "margin" in self.loss_criterion:
+                    dec_o = F.sigmoid(dec_o)
+                if self.loss_criterion == "margin":
+                    tgts = tgts.long()
                 loss = self.criterion(dec_o, tgts)
                 #nn.utils.clip_grad_norm(encoder.parameters(), 0.05)
                 #nn.utils.clip_grad_norm(decoder.parameters(), 0.05)
@@ -380,7 +399,11 @@ class CFG(object):
                 mb, tgts = mb.to(self.device), tgts.to(self.device)
                 mb = encoder(mb)
                 out = decoder(mb)
-                loss = criterion(out, tgts) # ach, alles für Bilder. fixed in master for 0.3.0 use (out.unsqueeze(2), tgts.unsqueeze(1))
+                if "margin" in self.loss_criterion:
+                    dec_o = F.sigmoid(dec_o)
+                if self.loss_criterion == "margin":
+                    tgts = tgts.long()
+                loss = criterion(out, tgts)
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.item())
@@ -400,7 +423,7 @@ class CFG(object):
             m = self.model_list[0]
             m.eval()
             self.ds.set_split("valid")
-            running_validation_loss = 0
+            running_validation_loss = []
             correct = 0
             num_batches = len(self.dl)
             with tqdm(total=num_batches, leave=False, position=1,
@@ -409,19 +432,24 @@ class CFG(object):
                     mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
                     out_valid = m(mb_valid)
                     out_valid, tgts_valid = out_valid.to(torch.device("cpu")), tgts_valid.to(torch.device("cpu"))
+                    if "margin" in self.loss_criterion:
+                        out_valid = F.sigmoid(out_valid)
+                    if self.loss_criterion == "margin":
+                        tgts_valid = tgts_valid.long()
                     loss_valid = self.criterion(out_valid, tgts_valid)
-                    running_validation_loss += loss_valid.item()
-                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(loss_valid.item())})
+                    running_validation_loss += [loss_valid.item()]
+                    last_five_ave = running_validation_loss[-5:]
+                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
+                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
         elif "attn" in self.model_name:
             self.ds.set_split("valid")
-            running_validation_loss = 0
+            running_validation_loss = []
             correct = 0
             num_batches = len(self.dl)
             encoder = self.model_list[0]
             decoder = self.model_list[1]
-            input_type = torch.FloatTensor
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, ((mb, lengths), tgts) in enumerate(self.dl):
@@ -429,11 +457,13 @@ class CFG(object):
                     encoder.eval()
                     decoder.eval()
 
+                    # init hidden before packing
+                    encoder_hidden = encoder.initHidden(mb)
+
                     # set inputs and targets
                     mb, tgts = mb.to(self.device), tgts.to(self.device)
                     mb = pack(mb, lengths, batch_first=True)
                     #print(mb.size(), tgts.size())
-                    encoder_hidden = encoder.initHidden(input_type)
                     encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
                     # Prepare input and output variables for decoder
@@ -448,14 +478,20 @@ class CFG(object):
                     dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
                     # calculate loss and backprop
                     dec_o, tgts = dec_o.to(torch.device("cpu")), tgts.to(torch.device("cpu"))
-                    dec_o = dec_o.view(-1, decoder.output_size)
-                    loss = self.criterion(dec_o, tgts.view(-1))
-                    running_validation_loss += loss.item()
-                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(loss_valid.item())})
+                    dec_o.squeeze_()
+                    if "margin" in self.loss_criterion:
+                        dec_o = F.sigmoid(dec_o)
+                    if self.loss_criterion == "margin":
+                        tgts = tgts.long()
+                    loss_valid = self.criterion(dec_o, tgts)
+                    running_validation_loss += [loss_valid.item()]
+                    last_five_ave = running_validation_loss[-5:]
+                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
+                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
                     t.update()
                     #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
 
-        self.valid_losses.append((running_validation_loss / num_batches, correct / len(self.ds)))
+        self.valid_losses.append((sum(running_validation_loss) / num_batches, correct / len(self.ds)))
 
     def get_train(self):
         return self.fit
@@ -467,7 +503,7 @@ class CFG(object):
             "epoch": epoch+1,
         }
         is_noisy = "_noisy" if self.noises_dir else ""
-        sname = "output/states/{}{}_{}.pt".format(self.model_name, is_noisy, epoch+1)
+        sname = "output/states/{}{}_{}_{}.pt".format(self.model_name, is_noisy, self.loss_criterion, epoch+1)
         torch.save(mstate, sname)
 
     def precompute(self, m):
@@ -515,7 +551,8 @@ def sort_collate(batch):
         max_len, n_feats = sigs[0].size()
         sigs = [pad_sig(s, max_len, n_feats) if s.size(0) != max_len else s for s in sigs]
         sigs = torch.stack(sigs, 0)
-        labels = torch.LongTensor(labels).unsqueeze(0)
+        lengths = np.array(lengths)
+        labels = torch.stack(labels, 0)
     return (sigs, lengths), labels
 
 def pad_sig(s, max_len, n_feats):

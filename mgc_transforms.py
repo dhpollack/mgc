@@ -320,7 +320,7 @@ class BinENC(object):
     """Transform labels into binary vector representation.  This is a poor-man's
        version of the sklearn LabelEncoder.
     """
-    def __init__(self, vocab):
+    def __init__(self, vocab, dtype=torch.float32):
         """
 
         Args:
@@ -328,6 +328,7 @@ class BinENC(object):
 
         """
         self.vocab = vocab
+        self.dtype = dtype
 
     def __call__(self, s):
         """
@@ -339,8 +340,7 @@ class BinENC(object):
             tensor (LongTensor): binary LongTensor of length vocab
 
         """
-
-        tensor = torch.zeros(len(self.vocab)).float()
+        tensor = torch.zeros(len(self.vocab), dtype=self.dtype)
         for label in s:
             tensor[label] = 1.
 

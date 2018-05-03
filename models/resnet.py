@@ -10,9 +10,6 @@ def resnet34(pretrained=False, num_genres=2, **kwargs):
     resnet = model_zoo.resnet34(pretrained=pretrained, **kwargs)
     # change the last fc layer
     resnet.fc = nn.Linear(512 * 1, num_genres)
-
-    model = nn.Sequential(conv2d, resnet)
-
     return model
 
 def resnet101(pretrained=False, num_genres=2, **kwargs):
@@ -22,9 +19,6 @@ def resnet101(pretrained=False, num_genres=2, **kwargs):
 
     resnet = model_zoo.resnet101(pretrained=pretrained, **kwargs)
     # change the last fc layer
-
     resnet.fc = nn.Linear(2048 * 1, num_genres)
-
-    model = nn.Sequential(conv2d, resnet)
 
     return model
