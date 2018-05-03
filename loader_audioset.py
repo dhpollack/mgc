@@ -71,6 +71,7 @@ class AUDIOSET(data.Dataset):
         self.maxlen = 160013  # precalculated for balanced
         self.data = {}
         self.labels = {}
+        self.cache = {}
 
         self.transform = transform
         self.target_transform = target_transform
@@ -106,7 +107,6 @@ class AUDIOSET(data.Dataset):
     def init_cache(self):
         print("initializing cache...")
         st = time.time()
-        self.cache = {}
         for fn in self.data[self.split]:
             audio, sr = self._load_data(fn, load_from_cache=False)
             self.cache[fn] = (audio, sr)
