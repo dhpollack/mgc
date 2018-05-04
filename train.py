@@ -19,7 +19,7 @@ if __name__ == '__main__':
             train(epoch, early_stop=None)
             if config.save_model and (epoch % config.chkpt_interval == 0 or epoch+1 == epochs):
                 save(epoch)
-    with open("losses_{}_{}_{}.json".format(config.model_name, config.loss_criterion, cur_epoch), "w") as f:
+    with open("output/losses_{}_{}_{}.json".format(config.model_name, config.loss_criterion, cur_epoch), "w") as f:
         losses = {
             "train_losses": config.train_losses,
             "valid_losses": config.valid_losses,

@@ -106,7 +106,7 @@ ENV/
 # output folder
 output/
 data/audioset/
-!data/audioset/class_labels_targets.csv
+!*/class_labels_targets.csv
 
 # data files
 *.mp3
