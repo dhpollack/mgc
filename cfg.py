@@ -255,15 +255,12 @@ class CFG(object):
             optimizers.append(optimizer_full(optimizer_full_params, **optimizer_full_kwargs))
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
             epochs = [100]
-            if "attn" in self.model_name:
-                opt = torch.optim.RMSprop
-            elif "bytenet" in self.model_name:
-                opt = torch.optim.SGD
+            opt = torch.optim.SGD
+            opt_kwargs = {"lr": 0.0001, "momentum": 0.9,}
             opt_params = [
                     {"params": model_list[0].parameters()},
                     {"params": model_list[1].parameters()}
                 ]
-            opt_kwargs = {"lr": 0.0001, "momentum": 0.9,}
             optimizers.append(opt(opt_params, **opt_kwargs))
         if weights is not None:
             for i, sd in enumerate(weights):
