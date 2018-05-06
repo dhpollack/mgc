@@ -58,6 +58,8 @@ class CFG(object):
 
     def get_params(self):
         parser = argparse.ArgumentParser(description='PyTorch Language ID Classifier Trainer')
+        parser.add_argument('--data-path', type=str, default="data/audioset",
+                            help='data path')
         parser.add_argument('--lr', type=float, default=0.0001,
                             help='initial learning rate')
         parser.add_argument('--epochs', type=int, default=10,
@@ -66,8 +68,8 @@ class CFG(object):
                             help='batch size')
         parser.add_argument('--freq-bands', type=int, default=224,
                             help='number of frequency bands to use')
-        parser.add_argument('--data-path', type=str, default="data/audioset",
-                            help='data path')
+        parser.add_argument('--num-samples', type=int, default=None,
+                            help='limit number of samples to load for testing')
         parser.add_argument('--use-cache', action='store_true',
                             help='use cache in the dataloader')
         parser.add_argument('--use-precompute', action='store_true',
@@ -156,8 +158,7 @@ class CFG(object):
 
     def get_dataloader(self):
         ds = AUDIOSET(self.data_path, noises_dir=self.noises_dir,
-                      use_cache=self.use_cache)
-        ds.NUM_VALID_SAMPLES = self.args.num_validate
+                      use_cache=self.use_cache, num_samples=self.args.num_samples)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
@@ -205,6 +206,7 @@ class CFG(object):
                 ])
         elif "bytenet" in self.model_name:
             T = tat.Compose([
+                    tat.PadTrim(self.max_len),
                     tat.LC2CL(),
                 ])
         ds.transform = T
@@ -387,8 +389,8 @@ class CFG(object):
             self.ds.set_split("train")
             self.optimizer = self.get_optimizer(epoch)
             epoch_losses = []
-            encoder = self.model[0]
-            decoder = self.model[1]
+            encoder = self.model_list[0]
+            decoder = self.model_list[1]
             for i, (mb, tgts) in enumerate(self.dl):
                 # set model into train mode and clear gradients
                 encoder.train()

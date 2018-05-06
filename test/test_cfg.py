@@ -9,6 +9,7 @@ if __name__ == '__main__':
     train = config.fit
     save = config.save
     cur_epoch = config.cur_epoch
+    print(len(config.ds.data[config.ds.split]))
     with tqdm(range(cur_epoch, 3), total=3, leave=True,
               postfix={"epoch": cur_epoch, "loss": "{0:.6f}".format(0.)}) as t:
         config.tqdmiter = t

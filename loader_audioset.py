@@ -26,7 +26,7 @@ class AUDIOSET(data.Dataset):
         basedir (string): Root directory of dataset.
     """
 
-    NUM_VALID_SAMPLES = 100
+    #NUM_VALID_SAMPLES = 100
 
     NOISES = ("noises", 'http://web.cse.ohio-state.edu/pnl/corpus/HuNonspeech/Nonspeech.zip')
 
@@ -56,7 +56,7 @@ class AUDIOSET(data.Dataset):
     def __init__(self, basedir="data/audioset", transform=None, target_transform=None,
                  dataset="balanced", split="train", use_cache=False, randomize=False,
                  noises_dir=None, mix_prob=.5, mix_vol=.2,
-                 otype='long'):
+                 otype='long', num_samples=None):
 
         assert os.path.exists(basedir)
 
@@ -97,7 +97,7 @@ class AUDIOSET(data.Dataset):
 
         # get list of files from appropriate dataset (balanced/unbalanced)
         ds_dict = self.DATASETS[dataset]
-        amanifest, labels = self._init_set(ds_dict, self.randomize)
+        amanifest, labels = self._init_set(ds_dict, self.randomize, num_samples)
         self.data[self.split] = amanifest
         self.labels[self.split] = labels
         # only initialize cache if first file not found in cache
@@ -123,7 +123,7 @@ class AUDIOSET(data.Dataset):
             sig, sr = self._load_data(fp)
             self.maxlen = sig.size(0) if sig.size(0) > self.maxlen else self.maxlen
 
-    def set_split(self, split):
+    def set_split(self, split, num_samples=None):
         map_split = {
             "train":"balanced",
             "valid":"eval",
@@ -132,7 +132,8 @@ class AUDIOSET(data.Dataset):
         if split not in self.labels:  # and not in self.data
             # do special stuff for validation
             randomize = True if split == "valid" else self.randomize
-            limit = self.NUM_VALID_SAMPLES if split == "valid" else None
+            limit = num_samples if num_samples else None
+            #limit = self.NUM_VALID_SAMPLES if split == "valid" else None
             # begin initialization
             ds_name = map_split[split]
             ds_dict = self.DATASETS[ds_name]
