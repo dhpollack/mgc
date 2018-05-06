@@ -464,7 +464,7 @@ class CFG(object):
                     mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
 
                     # init hidden before packing
-                    encoder_hidden = encoder.initHidden(mb)
+                    encoder_hidden = encoder.initHidden(mb_valid)
 
                     # set inputs and targets
                     mb_valid = pack(mb_valid, lengths, batch_first=True)
