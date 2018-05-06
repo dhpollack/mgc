@@ -455,22 +455,22 @@ class CFG(object):
             decoder = self.model_list[1]
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
-                for i, ((mb, lengths), tgts) in enumerate(self.dl):
+                for i, ((mb_valid, lengths), tgts_valid) in enumerate(self.dl):
                     # set model into train mode and clear gradients
                     encoder.eval()
                     decoder.eval()
+
+                    # move inputs to cuda if required
+                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
 
                     # init hidden before packing
                     encoder_hidden = encoder.initHidden(mb)
 
                     # set inputs and targets
-                    mb, tgts = mb.to(self.device), tgts.to(self.device)
-                    mb = pack(mb, lengths, batch_first=True)
+                    mb_valid = pack(mb_valid, lengths, batch_first=True)
                     #print(mb.size(), tgts.size())
-                    encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
+                    encoder_output, encoder_hidden = encoder(mb_valid, encoder_hidden)
 
-                    # Prepare input and output variables for decoder
-                    dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
                     #print(encoder_output.detach().new(dec_size).size())
                     enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
                     dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
@@ -480,13 +480,13 @@ class CFG(object):
                     # run through decoder in one shot
                     dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
                     # calculate loss and backprop
-                    dec_o, tgts = dec_o.to(torch.device("cpu")), tgts.to(torch.device("cpu"))
+                    dec_o, tgts_valid = dec_o.to(torch.device("cpu")), tgts_valid.to(torch.device("cpu"))
                     dec_o.squeeze_()
                     if "margin" in self.loss_criterion:
                         dec_o = F.sigmoid(dec_o)
                     if self.loss_criterion == "margin":
-                        tgts = tgts.long()
-                    loss_valid = self.criterion(dec_o, tgts)
+                        tgts_valid = tgts_valid.long()
+                    loss_valid = self.criterion(dec_o, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
                     last_five_ave = running_validation_loss[-5:]
                     last_five_ave = sum(last_five_ave) / len(last_five_ave)
