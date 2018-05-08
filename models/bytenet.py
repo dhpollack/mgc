@@ -5,13 +5,13 @@ from torch.autograd import Variable
 import math
 import torchvision.models as model_zoo
 
-def resnet34_encoder(pretrained=False, d=40, num_genres=2, **kwargs):
+def resnet34_encoder(pretrained=False, d=40, num_classes=2, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
 
-    resnet = model_zoo.resnet34(pretrained=pretrained, **kwargs)
+    resnet = model_zoo.resnet34(pretrained=pretrained)
     # change the last fc layer
-    resnet.fc = nn.Linear(512 * 1, num_genres)
+    resnet.fc = nn.Linear(512 * 1, num_classes)
 
     model = nn.Sequential(conv2d, resnet)
 
@@ -213,5 +213,5 @@ def bytenet(kwargs_encoder, kwargs_decoder):
     encoder = BytenetEncoder(**kwargs_encoder)
     #decoder = BytenetDecoder(**kwargs_decoder)
     #decoder = resnet34_encoder(pretrained=True, **kwargs_decoder)
-    decoder = resnet34_encoder(pretrained=True, **kwargs_decoder)
+    decoder = squeezenet_encoder(pretrained=True, **kwargs_decoder)
     return [encoder, decoder]
