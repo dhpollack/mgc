@@ -5,7 +5,7 @@ from torch.autograd import Variable
 import math
 import torchvision.models as model_zoo
 
-def resnet34_encoder(pretrained=False, d=40, num_classes=2, **kwargs):
+def resnet34_decoder(pretrained=False, d=40, num_classes=2, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
 
@@ -17,7 +17,7 @@ def resnet34_encoder(pretrained=False, d=40, num_classes=2, **kwargs):
 
     return model
 
-def squeezenet_encoder(pretrained=False, num_classes=5, **kwargs):
+def squeezenet_decoder(pretrained=False, num_classes=5, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
 
@@ -212,6 +212,6 @@ class BytenetDecoder(nn.Module):
 def bytenet(kwargs_encoder, kwargs_decoder):
     encoder = BytenetEncoder(**kwargs_encoder)
     #decoder = BytenetDecoder(**kwargs_decoder)
-    #decoder = resnet34_encoder(pretrained=True, **kwargs_decoder)
-    decoder = squeezenet_encoder(pretrained=True, **kwargs_decoder)
+    decoder = resnet34_decoder(pretrained=True, **kwargs_decoder)
+    #decoder = squeezenet_decoder(pretrained=True, **kwargs_decoder)
     return [encoder, decoder]
