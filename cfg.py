@@ -404,7 +404,6 @@ class CFG(object):
                 mb = encoder(mb)
                 mb.unsqueeze_(1)
                 out = decoder(mb)
-                out = out[:,:,-1]
                 if "margin" in self.loss_criterion:
                     out = F.sigmoid(out)
                 if self.loss_criterion == "margin":
