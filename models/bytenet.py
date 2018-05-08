@@ -3,6 +3,34 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import math
+import torchvision.models as model_zoo
+
+def resnet34_encoder(pretrained=False, d=40, num_genres=2, **kwargs):
+
+    conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
+
+    resnet = model_zoo.resnet34(pretrained=pretrained, **kwargs)
+    # change the last fc layer
+    resnet.fc = nn.Linear(512 * 1, num_genres)
+
+    model = nn.Sequential(conv2d, resnet)
+
+    return model
+
+def squeezenet_encoder(pretrained=False, num_classes=5, **kwargs):
+
+    conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
+
+    sqnet = model_zoo.squeezenet1_1(pretrained=pretrained)
+    # change the last conv2d layer
+    sqnet.classifier._modules["1"] = nn.Conv2d(512, num_classes, kernel_size=(1, 1))
+    # change the internal num_classes variable rather than redefining the forward pass
+    sqnet.num_classes = num_classes
+
+    model = nn.Sequential(conv2d, sqnet)
+
+    return model
+
 
 def _same_pad(k=1, dil=1):
     # assumes stride length of 1
@@ -183,6 +211,7 @@ class BytenetDecoder(nn.Module):
 
 def bytenet(kwargs_encoder, kwargs_decoder):
     encoder = BytenetEncoder(**kwargs_encoder)
-    decoder = BytenetDecoder(**kwargs_decoder)
-
+    #decoder = BytenetDecoder(**kwargs_decoder)
+    #decoder = resnet34_encoder(pretrained=True, **kwargs_decoder)
+    decoder = resnet34_encoder(pretrained=True, **kwargs_decoder)
     return [encoder, decoder]

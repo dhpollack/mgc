@@ -26,7 +26,7 @@ class AUDIOSET(data.Dataset):
         basedir (string): Root directory of dataset.
     """
 
-    #NUM_VALID_SAMPLES = 100
+    NUM_VALID_SAMPLES = 100
 
     NOISES = ("noises", 'http://web.cse.ohio-state.edu/pnl/corpus/HuNonspeech/Nonspeech.zip')
 
@@ -127,13 +127,16 @@ class AUDIOSET(data.Dataset):
         map_split = {
             "train":"balanced",
             "valid":"eval",
-            "test":"unbalanced",
+            "test":"eval",
         }
         if split not in self.labels:  # and not in self.data
             # do special stuff for validation
             randomize = True if split == "valid" else self.randomize
             limit = num_samples if num_samples else None
-            #limit = self.NUM_VALID_SAMPLES if split == "valid" else None
+            if split == "valid":
+                limit = self.NUM_VALID_SAMPLES
+            elif split == "test":
+                limit = -self.NUM_VALID_SAMPLES if not limit else -limit
             # begin initialization
             ds_name = map_split[split]
             ds_dict = self.DATASETS[ds_name]

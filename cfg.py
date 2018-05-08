@@ -128,13 +128,13 @@ class CFG(object):
             }
             model_list = models.attn.attn(kwargs_encoder, kwargs_decoder)
         elif "bytenet" in self.model_name:
-            self.d = 800
+            self.d = self.args.freq_bands // 2
             kwargs_encoder = {
                 "d": self.d,
                 "max_r": 16,
                 "k": 3,
                 "num_sets": 6,
-                "reduce_out": [0, 4, 4, 4, 4, 2],
+                "reduce_out": [17, 3, 0, 2, 0, 7],
             }
             kwargs_decoder = {
                 "d": self.d,
@@ -205,8 +205,9 @@ class CFG(object):
                     #tat.BLC2CBL(),
                 ])
         elif "bytenet" in self.model_name:
+            offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    tat.PadTrim(self.max_len),
+                    tat.PadTrim(self.max_len - offset),
                     tat.LC2CL(),
                 ])
         ds.transform = T
@@ -382,7 +383,8 @@ class CFG(object):
                 else:
                     print(epoch_losses[-1])
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
-                    self.validate(epoch)
+                    with torch.no_grad():
+                        self.validate(epoch)
                 self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
         if "bytenet" in self.model_name:
@@ -400,12 +402,14 @@ class CFG(object):
                 # set inputs and targets
                 mb, tgts = mb.to(self.device), tgts.to(self.device)
                 mb = encoder(mb)
+                mb.unsqueeze_(1)
                 out = decoder(mb)
+                out = out[:,:,-1]
                 if "margin" in self.loss_criterion:
-                    dec_o = F.sigmoid(dec_o)
+                    out = F.sigmoid(out)
                 if self.loss_criterion == "margin":
                     tgts = tgts.long()
-                loss = criterion(out, tgts)
+                loss = self.criterion(out, tgts)
                 loss.backward()
                 self.optimizer.step()
                 epoch_losses.append(loss.item())
@@ -415,25 +419,26 @@ class CFG(object):
                 else:
                     print(epoch_losses[-1])
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
-                    self.validate(epoch)
+                    with torch.no_grad():
+                        self.validate(epoch)
                 self.ds.set_split("train")
                 self.train_losses.append(epoch_losses)
 
 
     def validate(self, epoch):
+        self.ds.set_split("valid", self.args.num_samples)
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
             m.eval()
-            self.ds.set_split("valid")
             running_validation_loss = []
             correct = 0
             num_batches = len(self.dl)
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for mb_valid, tgts_valid in self.dl:
-                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
+                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
                     out_valid = m(mb_valid)
-                    out_valid, tgts_valid = out_valid.to(torch.device("cpu")), tgts_valid.to(torch.device("cpu"))
+                    out_valid = out_valid.to(torch.device("cpu"))
                     if "margin" in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)
                     if self.loss_criterion == "margin":
@@ -446,7 +451,6 @@ class CFG(object):
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
         elif "attn" in self.model_name:
-            self.ds.set_split("valid")
             running_validation_loss = []
             correct = 0
             num_batches = len(self.dl)
@@ -460,7 +464,7 @@ class CFG(object):
                     decoder.eval()
 
                     # move inputs to cuda if required
-                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(self.device)
+                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
 
                     # init hidden before packing
                     encoder_hidden = encoder.initHidden(mb_valid)
@@ -479,13 +483,43 @@ class CFG(object):
                     # run through decoder in one shot
                     dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
                     # calculate loss and backprop
-                    dec_o, tgts_valid = dec_o.to(torch.device("cpu")), tgts_valid.to(torch.device("cpu"))
+                    dec_o = dec_o.to(torch.device("cpu"))
                     dec_o.squeeze_()
                     if "margin" in self.loss_criterion:
                         dec_o = F.sigmoid(dec_o)
                     if self.loss_criterion == "margin":
                         tgts_valid = tgts_valid.long()
                     loss_valid = self.criterion(dec_o, tgts_valid)
+                    running_validation_loss += [loss_valid.item()]
+                    last_five_ave = running_validation_loss[-5:]
+                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
+                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
+                    t.update()
+                    #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
+        elif "bytenet" in self.model_name:
+            running_validation_loss = []
+            correct = 0
+            num_batches = len(self.dl)
+            encoder = self.model_list[0]
+            decoder = self.model_list[1]
+            with tqdm(total=num_batches, leave=False, position=1,
+                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+                for i, (mb_valid, tgts_valid) in enumerate(self.dl):
+                    # set model into train mode and clear gradients
+                    encoder.eval()
+                    decoder.eval()
+
+                    # set inputs and targets
+                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
+                    mb_valid = encoder(mb_valid)
+                    mb_valid.unsqueeze_(1)
+                    out_valid = decoder(mb_valid)
+                    if "margin" in self.loss_criterion:
+                        out_valid = F.sigmoid(out_valid)
+                    if self.loss_criterion == "margin":
+                        tgts_valid = tgts_valid.long()
+                    out_valid = out_valid.to(torch.device("cpu"))
+                    loss_valid = self.criterion(out_valid, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
                     last_five_ave = running_validation_loss[-5:]
                     last_five_ave = sum(last_five_ave) / len(last_five_ave)
