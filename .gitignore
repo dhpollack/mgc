@@ -105,6 +105,7 @@ ENV/
 
 # output folder
 output/
+data/audioset # gitignore audioset as folder or file
 data/audioset/
 
 # data files
