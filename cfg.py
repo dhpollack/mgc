@@ -530,7 +530,7 @@ class CFG(object):
     def save(self, epoch):
         mstate = {
             "models": [m.module.state_dict() if isinstance(m, nn.DataParallel) else m.state_dict() for m in self.model_list],
-            "optimizer": self.optimizer.module.state_dict() if isinstance(o, nn.DataParallel) else self.optimizer.state_dict(),
+            "optimizer": self.optimizer.module.state_dict() if isinstance(self.optimizer, nn.DataParallel) else self.optimizer.state_dict(),
             "epoch": epoch+1,
         }
         is_noisy = "_noisy" if self.noises_dir else ""
