@@ -277,7 +277,7 @@ class CFG(object):
                     if torch.is_tensor(v):
                         v = v.to(self.device)
                         state[k] = v
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=epochs, gamma=0.4)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=epochs[1:], gamma=0.4)
 
         return epochs, criterion, optimizer, scheduler
 
