@@ -5,7 +5,7 @@ from tqdm import tqdm
 if __name__ == '__main__':
     # python -m test.test_cfg --model-name squeezenet --data-path /mnt/data/mgc/data/audioset --batch-size 10 --use-cache
     msg = ""
-    EPOCHS = 10
+    EPOCHS = 30
     config = CFG()
     train = config.fit
     save = config.save

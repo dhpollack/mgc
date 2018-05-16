@@ -43,13 +43,13 @@ class CFG(object):
         else:
             state_dicts = {
                 "models": None,
-                "optimizers": None,
+                "optimizer": None,
                 "epoch": 0,
             }
         self.cur_epoch = state_dicts["epoch"]
         self.model_list = self.get_models(state_dicts["models"])
         self.ds, self.dl = self.get_dataloader()
-        self.epochs, self.criterion, self.optimizers = self.init_optimizer(state_dicts["optimizers"])
+        self.epochs, self.criterion, self.optimizer, self.scheduler = self.init_optimizer(state_dicts["optimizer"])
         if self.ngpu > 1:
             self.model_list = [nn.DataParallel(m) for m in self.model_list]
         self.valid_losses = []
@@ -230,7 +230,6 @@ class CFG(object):
         #else:
         #    model = self.model.module
         model_list = self.model_list
-        optimizers = []
         if self.loss_criterion == "softmargin":
             criterion = nn.MultiLabelSoftMarginLoss()
         elif self.loss_criterion == "margin":
@@ -238,67 +237,77 @@ class CFG(object):
         else:
             criterion = nn.BCEWithLogitsLoss()
         epochs = None
-        if any(x in self.model_name for x in ["resnet34", "resnet101", "squeezenet"]):
+        if "squeezenet" in self.model_name:
+            epochs = [10, 20, 100]
+            opt_type = torch.optim.Adam
+            opt_params = [
+                {"params": model_list[0][1].features.parameters(), "lr": 0.},
+                {"params": model_list[0][1].classifier.parameters(), "lr": self.args.lr}
+            ]
+            opt_kwargs = {"amsgrad": True}
+        elif any(x in self.model_name for x in ["resnet34", "resnet101"]):
             if "resnet34" in self.model_name:
-                epochs = [40, 100]
+                epochs = [20, 60, 140]
             elif "resnet101" in self.model_name:
-                epochs = [20, 50]
-            elif "squeezenet" in self.model_name:
-                epochs = [100]
-            if any(x in self.model_name for x in ["resnet34", "resnet101"]):
-                optimizer_fc = torch.optim.Adam
-                optimizer_fc_params = model_list[0][1].fc.parameters()
-                optimizer_fc_kwargs = {"lr": 0.0001,}
-                optimizer_fc_precom = nn.Sequential(model_list[0][0],
-                                                    *list(model_list[0][1].children())[:-1])
-                optimizers.append(optimizer_fc(optimizer_fc_params, **optimizer_fc_kwargs))
-            optimizer_full = torch.optim.SGD
-            optimizer_full_params = model_list[0].parameters()
-            optimizer_full_kwargs = {"lr": 0.0001, "momentum": 0.9,}
-            optimizers.append(optimizer_full(optimizer_full_params, **optimizer_full_kwargs))
+                epochs = [20, 40, 80]
+            opt_type = torch.optim.Adam
+            feature_params = nn.ParameterList()
+            for m in list(model_list[0][1].children())[:-1]:
+                feature_params.extend(m.parameters())
+            fc_params = model_list[0][1].fc.parameters()
+            opt_params = [
+                {"params": feature_params, "lr": 0.}, # features
+                {"params": fc_params, "lr": self.args.lr} # classifier
+            ]
+            opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
             epochs = [100]
-            opt = torch.optim.SGD
-            opt_kwargs = {"lr": 0.0001, "momentum": 0.9,}
+            opt_type = torch.optim.SGD
             opt_params = [
-                    {"params": model_list[0].parameters()},
-                    {"params": model_list[1].parameters()}
-                ]
-            optimizers.append(opt(opt_params, **opt_kwargs))
+                {"params": model_list[0].parameters(), "lr": self.args.lr},
+                {"params": model_list[1].parameters(), "lr": self.args.lr}
+            ]
+            opt_kwargs = {}
+        optimizer = opt_type(opt_params, **opt_kwargs)
         if weights is not None:
-            for i, sd in enumerate(weights):
-                optimizers[i].load_state_dict(sd)
-                # https://github.com/pytorch/pytorch/issues/2830, fixed in master?
-                for state in optimizers[i].state.values():
-                    for k, v in state.items():
-                        if torch.is_tensor(v):
-                            v = v.to(self.device)
-                            state[k] = v
+            optimizer.load_state_dict(weights)
+            # https://github.com/pytorch/pytorch/issues/2830, fixed in master?
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if torch.is_tensor(v):
+                        v = v.to(self.device)
+                        state[k] = v
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=epochs, gamma=0.4)
 
-        return epochs, criterion, optimizers
+        return epochs, criterion, optimizer, scheduler
 
-    def get_optimizer(self, epoch):
-        grenz = 0
-        for i, v in enumerate(self.epochs):
-            grenz += v
-            if epoch < grenz:
-                return self.optimizers[0]
-            elif epoch == grenz:
-                self.tqdmiter.write("Using new optimizer: {}".format(self.optimizers[i+1]))
-                return self.optimizers[i+1]
-            else:
+    def adjust_opt_params(self, epoch):
+        # automate fine tuning
+        if epoch == self.epochs[0]:
+            if "squeezenet" in self.model_name:
+                self.optimizer.param_groups[0]["initial_lr"] = self.scheduler.base_lrs[0] = self.optimizer.param_groups[1]["initial_lr"]
+                self.optimizer.param_groups[0]["lr"] = self.args.lr
+            elif "resnet" in self.model_name:
+                self.optimizer.param_groups[0]["initial_lr"] = self.scheduler.base_lrs[0] = self.optimizer.param_groups[1]["initial_lr"]
+                self.optimizer.param_groups[0]["lr"] = self.args.lr
+            elif "attn" in self.model_name:
+                # no finetuning of these models yet
                 pass
-        self.tqdmiter.write("something went wrong, this should not condition should not be reached...")
-        return self.optimizers[-1]
+            elif "bytenet" in self.model_name:
+                # no finetuning of these models yet
+                pass
+            #print(self.optimizer)
 
     def fit(self, epoch, early_stop=None):
+        epoch_losses = []
+        self.ds.set_split("train")
+        self.adjust_opt_params(epoch)
+        self.scheduler.step()
+        #self.optimizer = self.get_optimizer(epoch)
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             if self.use_precompute:
                 pass # TODO implement network precomputation
                 #self.precompute(self.L["fc_layer"]["precompute"])
-            self.ds.set_split("train")
-            self.optimizer = self.get_optimizer(epoch)
-            epoch_losses = []
             m = self.model_list[0]
             for i, (mb, tgts) in enumerate(self.dl):
                 if i == early_stop: break
@@ -323,15 +332,10 @@ class CFG(object):
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     with torch.no_grad():
                         self.validate(epoch)
-                self.ds.set_split("train")
-            self.train_losses.append(epoch_losses)
-        if "attn" in self.model_name:
-            self.ds.set_split("train")
-            self.optimizer = self.get_optimizer(epoch)
-            epoch_losses = []
+                        self.ds.set_split("train")
+        elif "attn" in self.model_name:
             encoder = self.model_list[0]
             decoder = self.model_list[1]
-            input_type = torch.FloatTensor
             for i, ((mb, lengths), tgts) in enumerate(self.dl):
                 # set model into train mode and clear gradients
                 encoder.train()
@@ -385,12 +389,8 @@ class CFG(object):
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     with torch.no_grad():
                         self.validate(epoch)
-                self.ds.set_split("train")
-                self.train_losses.append(epoch_losses)
-        if "bytenet" in self.model_name:
-            self.ds.set_split("train")
-            self.optimizer = self.get_optimizer(epoch)
-            epoch_losses = []
+                        self.ds.set_split("train")
+        elif "bytenet" in self.model_name:
             encoder = self.model_list[0]
             decoder = self.model_list[1]
             for i, (mb, tgts) in enumerate(self.dl):
@@ -420,22 +420,23 @@ class CFG(object):
                 if i % self.log_interval == 0 and self.do_validate and i != 0:
                     with torch.no_grad():
                         self.validate(epoch)
-                self.ds.set_split("train")
-                self.train_losses.append(epoch_losses)
-
+                        self.ds.set_split("train")
+        self.train_losses.append(epoch_losses)
 
     def validate(self, epoch):
         self.ds.set_split("valid", self.args.num_samples)
+        running_validation_loss = []
+        correct = 0
+        num_batches = len(self.dl)
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
+            # set model(s) into eval mode
             m.eval()
-            running_validation_loss = []
-            correct = 0
-            num_batches = len(self.dl)
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for mb_valid, tgts_valid in self.dl:
-                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
+                    mb_valid = mb_valid.to(self.device)
+                    tgts_valid = tgts_valid.to(torch.device("cpu"))
                     out_valid = m(mb_valid)
                     out_valid = out_valid.to(torch.device("cpu"))
                     if "margin" in self.loss_criterion:
@@ -450,21 +451,19 @@ class CFG(object):
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
         elif "attn" in self.model_name:
-            running_validation_loss = []
-            correct = 0
-            num_batches = len(self.dl)
             encoder = self.model_list[0]
             decoder = self.model_list[1]
+            # set model(s) into eval mode
+            encoder.eval()
+            decoder.eval()
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, ((mb_valid, lengths), tgts_valid) in enumerate(self.dl):
                     # set model into train mode and clear gradients
-                    encoder.eval()
-                    decoder.eval()
 
                     # move inputs to cuda if required
-                    mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
-
+                    mb_valid = mb_valid.to(self.device)
+                    tgts_valid = tgts_valid.to(torch.device("cpu"))
                     # init hidden before packing
                     encoder_hidden = encoder.initHidden(mb_valid)
 
@@ -481,7 +480,7 @@ class CFG(object):
 
                     # run through decoder in one shot
                     dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
-                    # calculate loss and backprop
+                    # calculate loss
                     dec_o = dec_o.to(torch.device("cpu"))
                     dec_o.squeeze_()
                     if "margin" in self.loss_criterion:
@@ -496,21 +495,18 @@ class CFG(object):
                     t.update()
                     #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
         elif "bytenet" in self.model_name:
-            running_validation_loss = []
-            correct = 0
-            num_batches = len(self.dl)
             encoder = self.model_list[0]
             decoder = self.model_list[1]
+            # set model(s) into eval mode
+            encoder.eval()
+            decoder.eval()
             with tqdm(total=num_batches, leave=False, position=1,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, (mb_valid, tgts_valid) in enumerate(self.dl):
-                    # set model into train mode and clear gradients
-                    encoder.eval()
-                    decoder.eval()
-
                     # set inputs and targets
                     mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
                     mb_valid = encoder(mb_valid)
+                    # turn 3d input into 4d input for classifier
                     mb_valid.unsqueeze_(1)
                     out_valid = decoder(mb_valid)
                     if "margin" in self.loss_criterion:
@@ -534,7 +530,7 @@ class CFG(object):
     def save(self, epoch):
         mstate = {
             "models": [m.module.state_dict() if isinstance(m, nn.DataParallel) else m.state_dict() for m in self.model_list],
-            "optimizers": [o.module.state_dict() if isinstance(o, nn.DataParallel) else o.state_dict() for o in self.optimizers],
+            "optimizer": self.optimizer.module.state_dict() if isinstance(o, nn.DataParallel) else self.optimizer.state_dict(),
             "epoch": epoch+1,
         }
         is_noisy = "_noisy" if self.noises_dir else ""
