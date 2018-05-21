@@ -70,6 +70,8 @@ class CFG(object):
                             help='number of frequency bands to use')
         parser.add_argument('--num-samples', type=int, default=None,
                             help='limit number of samples to load for testing')
+        parser.add_argument('--add-no-label', action='store_true',
+                            help='add a label for "no label" or background noise')
         parser.add_argument('--use-cache', action='store_true',
                             help='use cache in the dataloader')
         parser.add_argument('--use-precompute', action='store_true',
@@ -158,7 +160,8 @@ class CFG(object):
 
     def get_dataloader(self):
         ds = AUDIOSET(self.data_path, noises_dir=self.noises_dir,
-                      use_cache=self.use_cache, num_samples=self.args.num_samples)
+                      use_cache=self.use_cache, num_samples=self.args.num_samples,
+                      add_no_label=self.args.add_no_label)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
@@ -524,6 +527,53 @@ class CFG(object):
 
         self.valid_losses.append((sum(running_validation_loss) / num_batches, correct / len(self.ds)))
 
+    def test(self):
+        self.ds.set_split("test", self.args.num_samples)
+        thresh = 0.8
+        acc = 0.
+        num_batches = len(self.dl)
+        num_labels = len(self.ds.labels_dict)
+        counter_array = np.zeros((num_labels, 6)) # tgts, preds, tp, fp, tn, fn
+        if any(x in self.model_name for x in ["resnet", "squeezenet"]):
+            m = self.model_list[0]
+            # set model(s) into eval mode
+            m.eval()
+            with tqdm(total=num_batches, leave=False, position=1,
+                      postfix={"acc": acc}) as t:
+                for mb, tgts in self.dl:
+                    mb = mb.to(self.device)
+                    tgts = tgts.to(torch.device("cpu"))
+                    out = m(mb)
+                    out = out.to(torch.device("cpu"))
+                    out = F.sigmoid(out)
+                    for tgt, o in zip(tgts, out):
+                        tgt = tgt.to(torch.device("cpu")).numpy()
+                        tgt_mask = tgt == 1.
+                        counter_array[tgt_mask, 0] += 1
+                        o_mask = o >= thresh
+                        counter_array[o_mask, 1] += 1
+
+                        o_mask = o_mask.numpy()
+                        tp = np.logical_and(tgt_mask==True, o_mask==True)
+                        fp = np.logical_and(tgt_mask==False, o_mask==True)
+                        tn = np.logical_and(tgt_mask==False, o_mask==False)
+                        fn = np.logical_and(tgt_mask==True, o_mask==False)
+
+                        counter_array[tp, 2] += 1
+                        counter_array[fp, 3] += 1
+                        counter_array[tn, 4] += 1
+                        counter_array[fn, 5] += 1
+
+                        k = int(np.sum(tgt_mask))
+                        tmp1 = torch.topk(o, k)[1]  # get indicies
+                        tmp2 = np.where(tgt == 1.)[0]
+                    #acc = counter_array[:, 0].sum() / counter_array[:, 0].sum()
+                    #t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(last_five_ave)})
+                    t.update()
+                    #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
+        else:
+            raise NotImplemented
+        print(counter_array.astype(np.int))
     def get_train(self):
         return self.fit
 

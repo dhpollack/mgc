@@ -56,7 +56,7 @@ class AUDIOSET(data.Dataset):
     def __init__(self, basedir="data/audioset", transform=None, target_transform=None,
                  dataset="balanced", split="train", use_cache=False, randomize=False,
                  noises_dir=None, mix_prob=.5, mix_vol=.2,
-                 otype='long', num_samples=None):
+                 otype='long', num_samples=None, add_no_label=False):
 
         assert os.path.exists(basedir)
 
@@ -80,7 +80,10 @@ class AUDIOSET(data.Dataset):
         with open(os.path.join(basedir, self.CLASSES_FILE), 'r', newline='') as f_classes:
             csvreader = csv.reader(f_classes, doublequote=True, skipinitialspace=True)
             next(csvreader, None);
-            tgt_tags = [[0, "__background__", "no label"]]
+            if add_no_label:
+                tgt_tags = [[0, "__background__", "no label"]]
+            else:
+                tgt_tags = []
             tgt_tags.extend([row for row in csv.reader(f_classes, delimiter=',')])
             tgt_tags = {
                 target_key: {
