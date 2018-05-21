@@ -239,7 +239,7 @@ class AUDIOSET(data.Dataset):
             audio += noise_sig * self.mix_vol()
         #assert audio.min() > -1.  # this significantly slows loading
         finish = time.time()
-        print("audio mixing took {0:.05f}".format(finish - start))
+        #print("audio mixing took {0:.05f}".format(finish - start))
         return audio
 
     def _init_set(self, ds_dict, randomize, limit=None):
