@@ -346,6 +346,34 @@ class BinENC(object):
 
         return tensor
 
+class XEntENC(object):
+    """Transform labels from a single text into an int representation.
+       This is a poor-man's version of the sklearn LabelEncoder.
+    """
+    def __init__(self, vocab, dtype=torch.int64):
+        """
+
+        Args:
+            vocab: dictionary of labels
+
+        """
+        self.vocab = vocab
+        self.dtype = dtype
+
+    def __call__(self, s):
+        """
+
+        Args:
+            s (int or list): target labels
+
+        Returns:
+            tensor (Tensor): scalar tensor
+
+        """
+        tensor = torch.tensor(s, dtype=self.dtype)
+
+        return tensor
+
 class WC(object):
     """Transform Word Counter.
     """

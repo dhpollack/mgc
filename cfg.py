@@ -214,7 +214,10 @@ class CFG(object):
                     tat.LC2CL(),
                 ])
         ds.transform = T
-        TT = mgc_transforms.BinENC(ds.labels_dict)
+        if self.loss_criterion == "crossentropy":
+            TT = mgc_transforms.XEntENC(ds.labels_dict)
+        else:
+            TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.target_transform = TT
         if self.use_cache:
             ds.init_cache()
@@ -237,6 +240,8 @@ class CFG(object):
             criterion = nn.MultiLabelSoftMarginLoss()
         elif self.loss_criterion == "margin":
             criterion = nn.MultiLabelMarginLoss()
+        elif self.loss_criterion == "crossentropy":
+            criterion = nn.CrossEntropyLoss()
         else:
             criterion = nn.BCEWithLogitsLoss()
         epochs = None
@@ -543,18 +548,21 @@ class CFG(object):
                 for mb, tgts in self.dl:
                     mb = mb.to(self.device)
                     tgts = tgts.to(torch.device("cpu"))
+                    # run inference
                     out = m(mb)
+                    # move output to cpu for analysis / numpy
                     out = out.to(torch.device("cpu"))
                     out = F.sigmoid(out)
+                    # out is either size (N, C) or (N, )
                     for tgt, o in zip(tgts, out):
-                        tgt = tgt.to(torch.device("cpu")).numpy()
+                        tgt = tgt.numpy()
                         tgt_mask = tgt == 1.
                         counter_array[tgt_mask, 0] += 1
                         o_mask = o >= thresh
-                        counter_array[o_mask, 1] += 1
 
+                        counter_array[o_mask, 1] += 1
                         o_mask = o_mask.numpy()
-                        tp = np.logical_and(tgt_mask==True, o_mask==True)
+                        tp = np.logical_and(tgt_mask==True, o_mask==True)  # this will be deflated for cross entorpy
                         fp = np.logical_and(tgt_mask==False, o_mask==True)
                         tn = np.logical_and(tgt_mask==False, o_mask==False)
                         fn = np.logical_and(tgt_mask==True, o_mask==False)

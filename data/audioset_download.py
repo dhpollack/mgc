@@ -92,7 +92,7 @@ except FileExistsError:
 raw_yt_files = os.listdir(files_dir)
 
 if args.download:
-    yt_dl = "youtube-dl -ci -f worstaudio \\ \n-o '{}/%(id)s.%(ext)s' \\ \n-a {}".format(files_dir, yt_urls_file)
+    yt_dl = "youtube-dl -ci -f worstaudio -o '{}/%(id)s.%(ext)s' -a {}".format(files_dir, yt_urls_file)
     # youtube-dl -ci -f worstaudio -o '/home/david/Programming/repos/dhpollack/mgc/data/audioset/files/%(id)s.%(ext)s' -a /home/david/Programming/repos/dhpollack/mgc/data/audioset/urls.txt
     print("run the following:\n\n{}".format(yt_dl))
 else:
