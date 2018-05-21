@@ -47,8 +47,8 @@ class CFG(object):
                 "epoch": 0,
             }
         self.cur_epoch = state_dicts["epoch"]
-        self.model_list = self.get_models(state_dicts["models"])
         self.ds, self.dl = self.get_dataloader()
+        self.model_list = self.get_models(state_dicts["models"])
         self.epochs, self.criterion, self.optimizer, self.scheduler = self.init_optimizer(state_dicts["optimizer"])
         if self.ngpu > 1:
             self.model_list = [nn.DataParallel(m) for m in self.model_list]
@@ -104,7 +104,7 @@ class CFG(object):
 
 
     def get_models(self, weights=None):
-        NUM_CLASSES = 68
+        NUM_CLASSES = len(self.ds.labels_dict)
         use_pretrained = True if not self.load_model else False
         if "resnet34" in self.model_name:
             model_list = [models.resnet.resnet34(use_pretrained, num_genres=NUM_CLASSES)]
