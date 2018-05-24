@@ -1,0 +1,5 @@
+Name of Quantlet: MusicalGenreClassification
+Description: Classifies audio clips from the Google Audioset dataset into different musical genres using deep learning and several traditional signal processing feature selection techniques.
+Keywords: deep-learning, pytorch, audio, classification, shazaam, fourier-transform, stft, mfcc, dilated-convolution, cnn, encoder-decoder, network, rnn, attention, resnet, bytenet, squeezenet, Luong-attention, spectrograms
+Author: David Pollack
+Submitted: Mon, June 18 2018

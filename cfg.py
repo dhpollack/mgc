@@ -1,5 +1,8 @@
 import argparse
 import sys
+import math
+import json
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,8 +13,6 @@ import torchaudio.transforms as tat
 import torchvision.transforms as tvt
 import mgc_transforms
 from loader_audioset import *
-import math
-import numpy as np
 from tqdm import tqdm
 
 class CFG(object):
@@ -534,10 +535,11 @@ class CFG(object):
 
     def test(self):
         self.ds.set_split("test", self.args.num_samples)
-        thresh = 0.8
+        thresh = 1. / 50.
         acc = 0.
         num_batches = len(self.dl)
         num_labels = len(self.ds.labels_dict)
+        jsondata = []
         counter_array = np.zeros((num_labels, 6)) # tgts, preds, tp, fp, tn, fn
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
@@ -552,16 +554,23 @@ class CFG(object):
                     out = m(mb)
                     # move output to cpu for analysis / numpy
                     out = out.to(torch.device("cpu"))
-                    out = F.sigmoid(out)
+                    jsondata.append((out.numpy().tolist(), tgts.numpy().tolist()))
+                    if self.loss_criterion == "crossentropy":
+                        out = F.softmax(out, dim = 1)
+                    else:
+                        out = F.sigmoid(out)
+                        #out = F.softmax(out, dim = 1)
                     # out is either size (N, C) or (N, )
                     for tgt, o in zip(tgts, out):
                         tgt = tgt.numpy()
                         tgt_mask = tgt == 1.
                         counter_array[tgt_mask, 0] += 1
                         o_mask = o >= thresh
+                        o_mask = o_mask.numpy()
+                        o_mask = o_mask.astype(np.bool)
+                        #print(o_mask); break;
 
                         counter_array[o_mask, 1] += 1
-                        o_mask = o_mask.numpy()
                         tp = np.logical_and(tgt_mask==True, o_mask==True)  # this will be deflated for cross entorpy
                         fp = np.logical_and(tgt_mask==False, o_mask==True)
                         tn = np.logical_and(tgt_mask==False, o_mask==False)
@@ -579,8 +588,10 @@ class CFG(object):
                     #t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(last_five_ave)})
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
+
         else:
             raise NotImplemented
+        #json.dump(jsondata, open("output/tmp/test_output.json", "w"))
         print(counter_array.astype(np.int))
     def get_train(self):
         return self.fit

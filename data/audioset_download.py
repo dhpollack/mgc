@@ -1,6 +1,7 @@
 import argparse
 import os
 import csv
+import random
 from urllib.request import urlretrieve
 
 """
@@ -15,6 +16,10 @@ parser.add_argument('--target-list', type=str, default='class_labels_targets.csv
                     help='file name of target list of labels (relative to BASEDIR)')
 parser.add_argument('--download', action='store_true',
                     help='get youtube-dl command to download files.')
+parser.add_argument('--randomize', action='store_true',
+                    help='randomize filelist.')
+parser.add_argument('--limit', type=int, default=None,
+                    help='limit number of files to download')
 parser.add_argument('--clobber', action='store_true',
                     help='overwrite existing files.')
 args = parser.parse_args()
@@ -73,7 +78,11 @@ with open(manifest_fn, 'r', newline='') as f:
     # balanced goes from 22160 to 3146
     segments = [(idx, st, fin, tags.split(',')) for idx, st, fin, tags in segments
                 if set(tags.split(',')).intersection(tags_code_set)]
-    print("{} files were found".format(len(segments)))
+    if args.randomize:
+        random.shuffle(segments)
+    if args.limit:
+        segments = segments[:args.limit]
+    print("{} files were will be written to our manifest".format(len(segments)))
 
 yt_idxes, _, _, _ = zip(*segments)
 
@@ -110,7 +119,7 @@ else:
         infile = os.path.join(files_dir, raw_yt_fn)
         outfile = os.path.join(processed_dir, raw_yt_fn_no_ext + '.wav')
         if not os.path.exists(outfile) or args.clobber:
-            cmd = "ffmpeg -ss {} -t {} -i {} -acodec pcm_s16le -ac 1 -ar 16000 {}".format(st, dur, infile, outfile)
+            cmd = "ffmpeg -y -ss {} -t {} -i {} -acodec pcm_s16le -ac 1 -ar 16000 {}".format(st, dur, infile, outfile)
             #print(cmd)
             os.system(cmd)
 # ffmpeg -ss 30 -t 10 -i files/zyXa2tdBTGc.webm -acodec pcm_s16le -ac 1 -ar 16000 processed/zyXa2tdBTGc.wav
