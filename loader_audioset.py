@@ -149,7 +149,8 @@ class AUDIOSET(data.Dataset):
         st = time.time()
         for fn in self.data[self.split]:
             audio, sr = self._load_data(fn, load_from_cache=False)
-            self.cache[fn] = (audio, sr)
+            if audio:
+                self.cache[fn] = (audio, sr)
         print("caching took {0:.2f}s to complete".format(time.time() - st))
 
     def find_max_len(self):
@@ -246,7 +247,11 @@ class AUDIOSET(data.Dataset):
         ext = data_file.rsplit('.', 1)[1]
         if not load_from_cache:
             if ext in self.AUDIO_EXTS:
-                audio, sr = torchaudio.load(data_file, normalization=True)
+                try:
+                    audio, sr = torchaudio.load(data_file, normalization=True)
+                except:
+                    print(data_file)
+                    return None, None
                 # check for max volume, this is relatively slow
                 amax = audio.max()
                 if amax > .7:
