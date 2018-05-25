@@ -70,12 +70,13 @@ else:  # default val: balanced
 manifest_fn = os.path.basename(segs_csv)
 manifest_fn = os.path.join(BASEDIR, manifest_fn)
 
+# with the unbalanced set, this can fail on low RAM machines.
 with open(manifest_fn, 'r', newline='') as f:
     csvreader = csv.reader(f, doublequote=True, skipinitialspace=True)
     # skip first three rows
     next(csvreader, None);next(csvreader, None);next(csvreader, None);
     segments = [row for row in csvreader]
-    # balanced goes from 22160 to 3146
+    # balanced goes from 22160 to 3146 for the balanced dataset
     segments = [(idx, st, fin, tags.split(',')) for idx, st, fin, tags in segments
                 if set(tags.split(',')).intersection(tags_code_set)]
     if args.randomize:
@@ -111,6 +112,9 @@ else:
     except FileExistsError:
         print("{} already exists".format(processed_dir))
     for raw_yt_fn in raw_yt_files:
+        if raw_yt_fn[-5:] == ".part":
+            print("skipping {}".format(raw_yt_fn))
+            continue
         raw_yt_fn_no_ext, raw_yt_ext = raw_yt_fn.split('.')
         yt_idx = yt_idxes.index(raw_yt_fn_no_ext)
         _, st, fn, tags = segments[yt_idx]

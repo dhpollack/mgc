@@ -105,50 +105,7 @@ class AUDIOSET(data.Dataset):
         amanifest, labels = self._init_set(ds_dict, self.randomize, num_samples)
         self.data[self.split] = amanifest
         self.labels[self.split] = labels
-        # only initialize cache if first file not found in cache
-        if self.use_cache and self.data[self.split][0] not in self.cache:
-            self.init_cache()
-
-    def init_cache(self):
-        print("initializing cache...")
-        st = time.time()
-        for fn in self.data[self.split]:
-            audio, sr = self._load_data(fn, load_from_cache=False)
-            self.cache[fn] = (audio, sr)
-        print("caching took {0:.2f}s to complete".format(time.time() - st))
-
-    def find_max_len(self):
-        """
-            This function finds the maximum length of all audio samples in the dataset.
-            This is done naively and not necessarily efficiently.  Perhaps using something
-            like soxi would be a better solution.
-        """
-        self.maxlen = 0
-        for fp in self.data[self.split]:
-            sig, sr = self._load_data(fp)
-            self.maxlen = sig.size(0) if sig.size(0) > self.maxlen else self.maxlen
-
-    def set_split(self, split, num_samples=None):
-        map_split = {
-            "train":"balanced",
-            "valid":"eval",
-            "test":"eval",
-        }
-        if split not in self.labels:  # and not in self.data
-            # do special stuff for validation
-            randomize = True if split == "valid" else self.randomize
-            limit = num_samples if num_samples else None
-            if split == "valid":
-                limit = self.NUM_VALID_SAMPLES
-            elif split == "test":
-                limit = -self.NUM_VALID_SAMPLES if not limit else -limit
-            # begin initialization
-            ds_name = map_split[split]
-            ds_dict = self.DATASETS[ds_name]
-            d, l = self._init_set(ds_dict, randomize, limit)
-            self.data[split] = d
-            self.labels[split] = l
-        self.split = split
+        print(len(self.data[self.split]))
         # only initialize cache if first file not found in cache
         if self.use_cache and self.data[self.split][0] not in self.cache:
             self.init_cache()
@@ -186,6 +143,85 @@ class AUDIOSET(data.Dataset):
 
     def __len__(self):
         return len(self.data[self.split])
+
+    def init_cache(self):
+        print("initializing cache...")
+        st = time.time()
+        for fn in self.data[self.split]:
+            audio, sr = self._load_data(fn, load_from_cache=False)
+            self.cache[fn] = (audio, sr)
+        print("caching took {0:.2f}s to complete".format(time.time() - st))
+
+    def find_max_len(self):
+        """
+            This function finds the maximum length of all audio samples in the dataset.
+            This is done naively and not necessarily efficiently.  Perhaps using something
+            like soxi would be a better solution.
+        """
+        self.maxlen = 0
+        for fp in self.data[self.split]:
+            sig, sr = self._load_data(fp)
+            self.maxlen = sig.size(0) if sig.size(0) > self.maxlen else self.maxlen
+
+    def set_split(self, split, num_samples=None):
+        map_split = {
+            "train": self.dataset,
+            "valid":"eval",
+            "test":"eval",
+        }
+        if split not in self.labels:  # and not in self.data
+            # do special stuff for validation
+            randomize = True if split == "valid" else self.randomize
+            limit = num_samples if num_samples else None
+            if split == "valid":
+                limit = self.NUM_VALID_SAMPLES
+            elif split == "test":
+                limit = -self.NUM_VALID_SAMPLES if not limit else -limit
+            # begin initialization
+            ds_name = map_split[split]
+            ds_dict = self.DATASETS[ds_name]
+            d, l = self._init_set(ds_dict, randomize, limit)
+            self.data[split] = d
+            self.labels[split] = l
+        self.split = split
+        # only initialize cache if first file not found in cache
+        if self.use_cache and self.data[self.split][0] not in self.cache:
+            self.init_cache()
+
+    def _init_set(self, ds_dict, randomize, limit=None):
+        """Initialize each a dataset if it has not been initialized already.
+        """
+        adir = os.path.join(self.basedir, ds_dict["dir"])
+        amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
+        num_files = len(amanifest)
+        if randomize:
+            random.shuffle(amanifest)
+        if limit:
+            amanifest = amanifest[:limit]
+        # get the info on each segment (audio clip), including the label
+        with open(os.path.join(self.basedir, ds_dict["segements_csv"]), 'r') as f_csv:
+            target_keys = set(self.labels_dict.keys())
+            csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
+            # skip first three rows
+            next(csvreader, None);next(csvreader, None);next(csvreader, None);
+            segments = [row for row in csvreader]
+            # balanced goes from 22160 to 3146
+            segments = {
+                target_key: {
+                    "st": float(st),
+                    "fin": float(fin),
+                    "tags": tags.split(",")
+                }
+                for target_key, st, fin, tags in segments
+                if set(tags.split(',')).intersection(target_keys)
+            }
+        # for each audio clip create a list of the labels as integers (i.e. [3, 45])
+        labels = []
+        for audio_path in amanifest:
+            target_key = os.path.basename(audio_path).split(".")[0]
+            labels.append([self.labels_dict[k]["label_id"] for k in segments[target_key]["tags"]
+                           if k in self.labels_dict])
+        return amanifest, labels
 
     def _load_data(self, data_file, load_from_cache=False):
         """
@@ -248,39 +284,6 @@ class AUDIOSET(data.Dataset):
         finish = time.time()
         #print("audio mixing took {0:.05f}".format(finish - start))
         return audio
-
-    def _init_set(self, ds_dict, randomize, limit=None):
-        adir = os.path.join(self.basedir, ds_dict["dir"])
-        amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
-        num_files = len(amanifest)
-        if randomize:
-            random.shuffle(amanifest)
-        if limit:
-            amanifest = amanifest[:limit]
-        # get the info on each segment (audio clip), including the label
-        with open(os.path.join(self.basedir, ds_dict["segements_csv"]), 'r') as f_csv:
-            target_keys = set(self.labels_dict.keys())
-            csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
-            # skip first three rows
-            next(csvreader, None);next(csvreader, None);next(csvreader, None);
-            segments = [row for row in csvreader]
-            # balanced goes from 22160 to 3146
-            segments = {
-                target_key: {
-                    "st": float(st),
-                    "fin": float(fin),
-                    "tags": tags.split(",")
-                }
-                for target_key, st, fin, tags in segments
-                if set(tags.split(',')).intersection(target_keys)
-            }
-        # for each audio clip create a list of the labels as integers (i.e. [3, 45])
-        labels = []
-        for audio_path in amanifest:
-            target_key = os.path.basename(audio_path).split(".")[0]
-            labels.append([self.labels_dict[k]["label_id"] for k in segments[target_key]["tags"]
-                           if k in self.labels_dict])
-        return amanifest, labels
 
 def bce_collate(batch, type='long'):
     """Puts batch of inputs into a tensor and labels into a list

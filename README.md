@@ -9,24 +9,33 @@ pytorch, torchvision, torchaudio, librosa, youtube-dl, ffmpeg
 
 ## Instructions
 
-0) clone git repos, move into base folder
+This is easiest with an [Anaconda](https://conda.io) environment. All of the conda programs can be installed with either apt or pip.  I prefer using [miniconda](https://conda.io/miniconda) instead of the full conda install.
+
+0) install requirements, clone git repos, move into base folder
 ```sh
-git clone https://github.com/dhpollack/mgc.git
-cd mgc
+# install all required library
+conda install -c pytorch pytorch torchvision cuda90 ffmpeg
+pip install librosa youtube_dl
+git clone https://github.com/pytorch/audio.git && cd audio
+sudo apt-get install sox libsox-dev libsox-fmt-all
+conda install cffi  # OR pip install cffi
+python setup.py install
+cd ..
+git clone https://github.com/dhpollack/mgc.git && cd mgc
 ```
 
 1) create folder structure for the data, saving models, download label subset csv file
 
 ```sh
 mkdir -p output/states output/vis data/audioset
-wget -P data/audioset [location to class_labels_targets.csv]
+wget -P data/audioset https://gist.githubusercontent.com/dhpollack/8a6415c6844178fa85487ffeb3186f11/raw/e0c01e6f6a3a7cdee456042a857d5cfd41ecdd00/class_label_targets.csv
 ```
 
-2) get the csv file with the subset of labels to download then download the balanced and eval datasets from the audio dataset.
+2) download the balanced and eval datasets from the audio dataset.
 
 ```sh
 python -m data.audioset_download --segs-name balanced --download
-# note, the path below will be different then below, use the command generate from running the previous line
+# note, the path below will be different then below, use the command generated from running the previous line
 youtube-dl -ci -f worstaudio -o '/home/david/Programming/repos/dhpollack/mgc/data/audioset/files/balanced/%(id)s.%(ext)s' -a /home/david/Programming/repos/dhpollack/mgc/data/audioset/balanced_urls.txt
 python -m data.audioset_download --segs-name balanced
 python -m data.audioset_download --segs-name eval --download

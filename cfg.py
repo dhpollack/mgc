@@ -71,6 +71,8 @@ class CFG(object):
                             help='number of frequency bands to use')
         parser.add_argument('--num-samples', type=int, default=None,
                             help='limit number of samples to load for testing')
+        parser.add_argument('--dataset', type=str, default="balanced",
+                            help='which Audioset dataset to use balanced / eval / unbalanced')
         parser.add_argument('--add-no-label', action='store_true',
                             help='add a label for "no label" or background noise')
         parser.add_argument('--use-cache', action='store_true',
@@ -160,7 +162,7 @@ class CFG(object):
         return model_list
 
     def get_dataloader(self):
-        ds = AUDIOSET(self.data_path, noises_dir=self.noises_dir,
+        ds = AUDIOSET(self.data_path, dataset=self.args.dataset, noises_dir=self.noises_dir,
                       use_cache=self.use_cache, num_samples=self.args.num_samples,
                       add_no_label=self.args.add_no_label)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
@@ -313,123 +315,130 @@ class CFG(object):
         self.adjust_opt_params(epoch)
         self.scheduler.step()
         #self.optimizer = self.get_optimizer(epoch)
+        num_batches = len(self.dl)
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             if self.use_precompute:
                 pass # TODO implement network precomputation
                 #self.precompute(self.L["fc_layer"]["precompute"])
             m = self.model_list[0]
-            for i, (mb, tgts) in enumerate(self.dl):
-                if i == early_stop: break
-                m.train()
-                mb, tgts = mb.to(self.device), tgts.to(self.device)
-                m.zero_grad()
-                out = m(mb)
-                if "margin" in self.loss_criterion:
-                    out = F.sigmoid(out)
-                if self.loss_criterion == "margin":
-                    tgts = tgts.long()
-                #print(out.size(), tgts.size())
-                loss = self.criterion(out, tgts)
-                loss.backward()
-                self.optimizer.step()
-                epoch_losses.append(loss.item())
-                if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
-                    self.tqdmiter.refresh()
-                else:
-                    print(epoch_losses[-1])
-                if i % self.log_interval == 0 and self.do_validate and i != 0:
-                    with torch.no_grad():
-                        self.validate(epoch)
-                        self.ds.set_split("train")
+            with tqdm(total=num_batches, leave=False, position=1) as t:
+                for i, (mb, tgts) in enumerate(self.dl):
+                    if i == early_stop: break
+                    m.train()
+                    mb, tgts = mb.to(self.device), tgts.to(self.device)
+                    m.zero_grad()
+                    out = m(mb)
+                    if "margin" in self.loss_criterion:
+                        out = F.sigmoid(out)
+                    if self.loss_criterion == "margin":
+                        tgts = tgts.long()
+                    #print(out.size(), tgts.size())
+                    loss = self.criterion(out, tgts)
+                    loss.backward()
+                    self.optimizer.step()
+                    epoch_losses.append(loss.item())
+                    if self.tqdmiter:
+                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.refresh()
+                    else:
+                        print(epoch_losses[-1])
+                    if i % self.log_interval == 0 and self.do_validate and i != 0:
+                        with torch.no_grad():
+                            self.validate(epoch)
+                            self.ds.set_split("train")
+                    t.update()
         elif "attn" in self.model_name:
             encoder = self.model_list[0]
             decoder = self.model_list[1]
-            for i, ((mb, lengths), tgts) in enumerate(self.dl):
-                # set model into train mode and clear gradients
-                encoder.train()
-                decoder.train()
-                encoder.zero_grad()
-                decoder.zero_grad()
+            with tqdm(total=num_batches, leave=False, position=1) as t:
+                for i, ((mb, lengths), tgts) in enumerate(self.dl):
+                    # set model into train mode and clear gradients
+                    encoder.train()
+                    decoder.train()
+                    encoder.zero_grad()
+                    decoder.zero_grad()
 
-                # set inputs and targets
-                mb, tgts = mb.to(self.device), tgts.to(self.device)
+                    # set inputs and targets
+                    mb, tgts = mb.to(self.device), tgts.to(self.device)
 
-                # create the initial hidden input before packing sequence
-                encoder_hidden = encoder.initHidden(mb)
+                    # create the initial hidden input before packing sequence
+                    encoder_hidden = encoder.initHidden(mb)
 
-                # pack sequence
-                mb = pack(mb, lengths, batch_first=True)
-                #print(mb.size(), tgts.size())
-                # encode sequence
-                encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
+                    # pack sequence
+                    mb = pack(mb, lengths, batch_first=True)
+                    #print(mb.size(), tgts.size())
+                    # encode sequence
+                    encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
 
-                # Prepare input and output variables for decoder
-                #dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
-                #print(encoder_output.detach().new(dec_size).size())
-                enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
-                dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
-                dec_h = encoder_hidden # Use last (forward) hidden state from encoder
-                #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
+                    # Prepare input and output variables for decoder
+                    #dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
+                    #print(encoder_output.detach().new(dec_size).size())
+                    enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
+                    dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
+                    dec_h = encoder_hidden # Use last (forward) hidden state from encoder
+                    #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
-                # run through decoder in one shot
-                dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
-                dec_o.squeeze_()
-                #print(dec_o)
-                #print(dec_o.size(), dec_h.size(), dec_attn.size(), tgts.size())
-                #print(dec_o.view(-1, decoder.output_size).size(), tgts.view(-1).size())
+                    # run through decoder in one shot
+                    dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
+                    dec_o.squeeze_()
+                    #print(dec_o)
+                    #print(dec_o.size(), dec_h.size(), dec_attn.size(), tgts.size())
+                    #print(dec_o.view(-1, decoder.output_size).size(), tgts.view(-1).size())
 
-                # calculate loss and backprop
-                if "margin" in self.loss_criterion:
-                    dec_o = F.sigmoid(dec_o)
-                if self.loss_criterion == "margin":
-                    tgts = tgts.long()
-                loss = self.criterion(dec_o, tgts)
-                #nn.utils.clip_grad_norm(encoder.parameters(), 0.05)
-                #nn.utils.clip_grad_norm(decoder.parameters(), 0.05)
-                loss.backward()
-                self.optimizer.step()
-                epoch_losses.append(loss.item())
-                if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
-                    self.tqdmiter.refresh()
-                else:
-                    print(epoch_losses[-1])
-                if i % self.log_interval == 0 and self.do_validate and i != 0:
-                    with torch.no_grad():
-                        self.validate(epoch)
-                        self.ds.set_split("train")
+                    # calculate loss and backprop
+                    if "margin" in self.loss_criterion:
+                        dec_o = F.sigmoid(dec_o)
+                    if self.loss_criterion == "margin":
+                        tgts = tgts.long()
+                    loss = self.criterion(dec_o, tgts)
+                    #nn.utils.clip_grad_norm(encoder.parameters(), 0.05)
+                    #nn.utils.clip_grad_norm(decoder.parameters(), 0.05)
+                    loss.backward()
+                    self.optimizer.step()
+                    epoch_losses.append(loss.item())
+                    if self.tqdmiter:
+                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.refresh()
+                    else:
+                        print(epoch_losses[-1])
+                    if i % self.log_interval == 0 and self.do_validate and i != 0:
+                        with torch.no_grad():
+                            self.validate(epoch)
+                            self.ds.set_split("train")
+                    t.update()
         elif "bytenet" in self.model_name:
             encoder = self.model_list[0]
             decoder = self.model_list[1]
-            for i, (mb, tgts) in enumerate(self.dl):
-                # set model into train mode and clear gradients
-                encoder.train()
-                decoder.train()
-                encoder.zero_grad()
-                decoder.zero_grad()
-                # set inputs and targets
-                mb, tgts = mb.to(self.device), tgts.to(self.device)
-                mb = encoder(mb)
-                mb.unsqueeze_(1)
-                out = decoder(mb)
-                if "margin" in self.loss_criterion:
-                    out = F.sigmoid(out)
-                if self.loss_criterion == "margin":
-                    tgts = tgts.long()
-                loss = self.criterion(out, tgts)
-                loss.backward()
-                self.optimizer.step()
-                epoch_losses.append(loss.item())
-                if self.tqdmiter:
-                    self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
-                    self.tqdmiter.refresh()
-                else:
-                    print(epoch_losses[-1])
-                if i % self.log_interval == 0 and self.do_validate and i != 0:
-                    with torch.no_grad():
-                        self.validate(epoch)
-                        self.ds.set_split("train")
+            with tqdm(total=num_batches, leave=False, position=1) as t:
+                for i, (mb, tgts) in enumerate(self.dl):
+                    # set model into train mode and clear gradients
+                    encoder.train()
+                    decoder.train()
+                    encoder.zero_grad()
+                    decoder.zero_grad()
+                    # set inputs and targets
+                    mb, tgts = mb.to(self.device), tgts.to(self.device)
+                    mb = encoder(mb)
+                    mb.unsqueeze_(1)
+                    out = decoder(mb)
+                    if "margin" in self.loss_criterion:
+                        out = F.sigmoid(out)
+                    if self.loss_criterion == "margin":
+                        tgts = tgts.long()
+                    loss = self.criterion(out, tgts)
+                    loss.backward()
+                    self.optimizer.step()
+                    epoch_losses.append(loss.item())
+                    if self.tqdmiter:
+                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.refresh()
+                    else:
+                        print(epoch_losses[-1])
+                    if i % self.log_interval == 0 and self.do_validate and i != 0:
+                        with torch.no_grad():
+                            self.validate(epoch)
+                            self.ds.set_split("train")
+                    t.update()
         self.train_losses.append(epoch_losses)
 
     def validate(self, epoch):
@@ -441,7 +450,7 @@ class CFG(object):
             m = self.model_list[0]
             # set model(s) into eval mode
             m.eval()
-            with tqdm(total=num_batches, leave=False, position=1,
+            with tqdm(total=num_batches, leave=True, position=2,
                       postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
                 for mb_valid, tgts_valid in self.dl:
                     mb_valid = mb_valid.to(self.device)

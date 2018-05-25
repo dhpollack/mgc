@@ -9,3 +9,5 @@ sudo mount -o defaults /dev/sdb1 /mnt/data
 ```
 
 ## Audioset - Google Research Dataset
+
+datasets - balanced / eval / unbalanced

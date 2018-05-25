@@ -1,11 +1,9 @@
 from cfg import *
-import time
 from tqdm import tqdm
 import json
 
 if __name__ == '__main__':
-    # python -m train --model-name squeezenet --data-path /mnt/data/mgc/data/audioset --batch-size 10 --use-cache
-    msg = ""
+    # python -m infer --model-name squeezenet --batch-size 10 --load-model output/states/resnet34_conv_crossentropy_140.pt
     config = CFG()
     config.ds.target_transform = mgc_transforms.BinENC(config.ds.labels_dict)
     infer = config.test
