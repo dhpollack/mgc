@@ -149,7 +149,7 @@ class AUDIOSET(data.Dataset):
         st = time.time()
         for fn in self.data[self.split]:
             audio, sr = self._load_data(fn, load_from_cache=False)
-            if audio:
+            if audio is None:
                 self.cache[fn] = (audio, sr)
         print("caching took {0:.2f}s to complete".format(time.time() - st))
 
