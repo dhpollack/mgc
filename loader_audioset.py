@@ -249,6 +249,8 @@ class AUDIOSET(data.Dataset):
             if ext in self.AUDIO_EXTS:
                 try:
                     audio, sr = torchaudio.load(data_file, normalization=True)
+                except KeyboardInterrupt:
+                    raise
                 except:
                     print(data_file)
                     return None, None
