@@ -124,8 +124,8 @@ class AUDIOSET(data.Dataset):
         # get targets
         target = self.labels[self.split][index]
         # just choose one label at random for multi-label samples
-        if not self.use_multi_label and self.split != "test":
-            target = random.choice(target)
+        if self.use_multi_label and self.split != "test":
+            target = [random.choice(target)]
 
         # get the filename at a particular index
         fn = self.data[self.split][index]
