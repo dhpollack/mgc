@@ -391,6 +391,8 @@ class BinENC(object):
             tensor (LongTensor): binary LongTensor of length vocab
 
         """
+        if isinstance(s, int):
+            s = [s]
         tensor = torch.zeros(len(self.vocab), dtype=self.dtype)
         for label in s:
             tensor[label] = 1.

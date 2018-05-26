@@ -105,7 +105,7 @@ class AUDIOSET(data.Dataset):
         amanifest, labels = self._init_set(ds_dict, self.randomize, num_samples)
         self.data[self.split] = amanifest
         self.labels[self.split] = labels
-        print(len(self.data[self.split]))
+        #print(len(self.data[self.split]))
         # only initialize cache if first file not found in cache
         if self.use_cache and self.data[self.split][0] not in self.cache:
             self.init_cache()
