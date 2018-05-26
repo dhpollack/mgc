@@ -27,6 +27,7 @@ class CFG(object):
         self.use_precompute = args.use_precompute
         self.use_cache = args.use_cache
         self.data_path = args.data_path
+        self.dataset = args.dataset
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
         self.log_interval = args.log_interval
@@ -168,8 +169,19 @@ class CFG(object):
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
-                    tat.MEL(n_mels=self.args.freq_bands),
-                    tat.BLC2CBL(),
+                    mgc_transforms.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
+                    mgc_transforms.BLC2CBL(),
+                    mgc_transforms.Scale(),
+                    tvt.ToPILImage(),
+                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
+                    tvt.ToTensor(),
+                ])
+        elif "_mfcc_librosa" in self.model_name:
+            T = tat.Compose([
+                    #tat.PadTrim(self.max_len),
+                    mgc_transforms.MFCC2(sr=16000, n_fft=1600, hop_length=800, n_mfcc=12),
+                    mgc_transforms.BLC2CBL(),
+                    mgc_transforms.Scale(),
                     tvt.ToPILImage(),
                     tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
                     tvt.ToTensor(),
@@ -205,7 +217,7 @@ class CFG(object):
                 ])
         elif "attn" in self.model_name:
             T = tat.Compose([
-                    tat.MEL(n_mels=224),
+                    tat.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
                     mgc_transforms.SqueezeDim(2),
                     tat.LC2CL(),
                     #tat.BLC2CBL(),
@@ -249,7 +261,10 @@ class CFG(object):
             criterion = nn.BCEWithLogitsLoss()
         epochs = None
         if "squeezenet" in self.model_name:
-            epochs = [10, 20, 100]
+            if self.dataset == "unbalanced":
+                epochs = [5, 10, 35, 50]
+            else:
+                epochs = [10, 20, 100]
             opt_type = torch.optim.Adam
             opt_params = [
                 {"params": model_list[0][1].features.parameters(), "lr": 0.},
@@ -258,9 +273,15 @@ class CFG(object):
             opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["resnet34", "resnet101"]):
             if "resnet34" in self.model_name:
-                epochs = [20, 60, 140]
+                if self.dataset == "unbalanced":
+                    epochs = [10, 25, 40, 50]
+                else:
+                    epochs = [20, 60, 100, 120]
             elif "resnet101" in self.model_name:
-                epochs = [20, 40, 80]
+                if self.dataset == "unbalanced":
+                    epochs = [10, 20, 28, 33]
+                else:
+                    epochs = [20, 40, 80]
             opt_type = torch.optim.Adam
             feature_params = nn.ParameterList()
             for m in list(model_list[0][1].children())[:-1]:
@@ -272,13 +293,16 @@ class CFG(object):
             ]
             opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
-            epochs = [100]
+            if self.dataset == "unbalanced":
+                epochs = [25, 40]
+            else:
+                epochs = [70, 100]
             opt_type = torch.optim.SGD
             opt_params = [
                 {"params": model_list[0].parameters(), "lr": self.args.lr},
                 {"params": model_list[1].parameters(), "lr": self.args.lr}
             ]
-            opt_kwargs = {}
+            opt_kwargs = {"momentum": 0.9}
         optimizer = opt_type(opt_params, **opt_kwargs)
         if weights is not None:
             optimizer.load_state_dict(weights)

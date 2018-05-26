@@ -195,26 +195,26 @@ class AUDIOSET(data.Dataset):
         adir = os.path.join(self.basedir, ds_dict["dir"])
         amanifest = [fn for fn in glob(os.path.join(adir, '*.*'))]
         num_files = len(amanifest)
+        target_keys = set(self.labels_dict.keys())
         if randomize:
             random.shuffle(amanifest)
         if limit:
             amanifest = amanifest[:limit]
         # get the info on each segment (audio clip), including the label
         with open(os.path.join(self.basedir, ds_dict["segements_csv"]), 'r') as f_csv:
-            target_keys = set(self.labels_dict.keys())
             csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
             # skip first three rows
             next(csvreader, None);next(csvreader, None);next(csvreader, None);
             segments = [row for row in csvreader]
             # balanced goes from 22160 to 3146
             segments = {
-                target_key: {
+                yt_id: {
                     "st": float(st),
                     "fin": float(fin),
-                    "tags": tags.split(",")
+                    "tags": tgts.split(",")
                 }
-                for target_key, st, fin, tags in segments
-                if set(tags.split(',')).intersection(target_keys)
+                for yt_id, st, fin, tgts in segments
+                if set(tgts.split(',')).intersection(target_keys)
             }
         # for each audio clip create a list of the labels as integers (i.e. [3, 45])
         labels = []
