@@ -423,6 +423,8 @@ class XEntENC(object):
             tensor (Tensor): scalar tensor
 
         """
+        if isinstance(s, list) and len(s) == 1:
+            s = s[0]
         tensor = torch.tensor(s, dtype=self.dtype)
 
         return tensor

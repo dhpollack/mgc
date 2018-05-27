@@ -28,11 +28,23 @@ AUDIOSET_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__
 
 TARGETS_PATH = os.path.join(AUDIOSET_PATH, "class_labels_targets.csv")
 
+ALL_LABELS_PATH = os.path.join(AUDIOSET_PATH, "class_labels_indices.csv")
+
 DATASETS = {
     "balanced": {"csvprefix": "train_segments"},
     "eval": {"csvprefix": "segments"},
-    "unbalanced": {"csvprefix": "train_segments_cropped"},
+    "unbalanced_subset": {"csvprefix": "train_segments_cropped"},
+    "unbalanced": {"csvprefix": "train_segments"},
 }
+
+data = {}
+data["metadata"] = {}
+
+# get total number of labels
+with open(ALL_LABELS_PATH, 'r', newline='') as f_classes:
+    csvreader = csv.reader(f_classes, doublequote=True, skipinitialspace=True)
+    next(csvreader, None);
+    total_labels = len([row for row in csvreader])
 
 # get available classes for the Audioset dataset and add a 'no label' class
 with open(TARGETS_PATH, 'r', newline='') as f_classes:
@@ -42,7 +54,7 @@ with open(TARGETS_PATH, 'r', newline='') as f_classes:
         tgts_dict = [[0, "__background__", "no label"]]
     else:
         tgts_dict = []
-    tgts_dict.extend([row for row in csv.reader(f_classes, delimiter=',')])
+    tgts_dict.extend([row for row in csvreader])
     tgts_dict = {
         target_key: {
             "id": target_id,
@@ -53,19 +65,23 @@ with open(TARGETS_PATH, 'r', newline='') as f_classes:
     }
     target_keys = set(tgts_dict.keys())
 #print(tgts_dict)
-
-data = {}
+data["metadata"].update({"labels": (total_labels, len(tgts_dict))})
+print("Using {} of {} labels in Audioset".format(len(tgts_dict), total_labels))
 
 for ds in DATASETS.keys():
+    if "_" in ds:
+        ds_prefix = ds.split("_")[0]
+    else:
+        ds_prefix = ds
     targets_counter = {}
-    segments_path = os.path.join(AUDIOSET_PATH, "{}_{}.csv".format(ds, DATASETS[ds]["csvprefix"]))
+    segments_path = os.path.join(AUDIOSET_PATH, "{}_{}.csv".format(ds_prefix, DATASETS[ds]["csvprefix"]))
     # get the info on each segment (audio clip), including the label
     with open(segments_path, 'r') as f_csv:
         csvreader = csv.reader(f_csv, doublequote=True, skipinitialspace=True)
         # skip first three rows
         next(csvreader, None);next(csvreader, None);next(csvreader, None);
         segments = [row for row in csvreader]
-        # balanced goes from 22160 to 3146
+        total_segments = len(segments)
         segments = {
             yt_id: {
                 "st": float(st),
@@ -75,6 +91,8 @@ for ds in DATASETS.keys():
             for yt_id, st, fin, tgts in segments
             if set(tgts.split(',')).intersection(target_keys)
         }
+        target_segments = len(segments)
+        print("Using {} of {} samples in {}".format(target_segments, total_segments, ds))
         for k, v in segments.items():
             segments[k]["tgts_name"] = []
             segments[k]["tgts_id"] = []
@@ -88,11 +106,15 @@ for ds in DATASETS.keys():
                 else:
                     targets_counter[tgt_id] += 1
         data[ds] = segments
+        data["metadata"].update({ds: (total_segments, target_segments)})
         index, counts = zip(*sorted([(k, v) for k, v in targets_counter.items()]))
         # plot stuff
         plt.figure()
-        plt.title("Audioset Label Count for {} Dataset".format(ds.capitalize()))
+        plt.title("Audioset Label Count for {} Dataset".format(ds_prefix.capitalize()))
         plt.xlabel("Label IDs")
         plt.ylabel("Count")
         plt.bar(index, counts)
         plt.savefig(os.path.join(VIS_PATH, "counts_{}.png".format(ds)))
+
+with open(os.path.join(VIS_PATH, "audioset_metadata.json"), "w") as f:
+    json.dump(data["metadata"],f)

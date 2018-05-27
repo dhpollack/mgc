@@ -86,7 +86,7 @@ class AUDIOSET(data.Dataset):
                 tgt_tags = [[0, "__background__", "no label"]]
             else:
                 tgt_tags = []
-            tgt_tags.extend([row for row in csv.reader(f_classes, delimiter=',')])
+            tgt_tags.extend([row for row in csvreader])
             tgt_tags = {
                 target_key: {
                     "id": target_id,
