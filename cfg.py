@@ -468,14 +468,16 @@ class CFG(object):
     def validate(self, epoch):
         self.ds.set_split("valid", self.args.num_samples)
         running_validation_loss = []
-        correct = 0
+        accuracies = []
+        acc = 0
+        threshold = 1 - (1. / 3.)
         num_batches = len(self.dl)
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
             # set model(s) into eval mode
             m.eval()
             with tqdm(total=num_batches, leave=True, position=2,
-                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+                      postfix={"acc": acc, "loss": "{0:.6f}".format(0.)}) as t:
                 for mb_valid, tgts_valid in self.dl:
                     mb_valid = mb_valid.to(self.device)
                     tgts_valid = tgts_valid.to(torch.device("cpu"))
@@ -487,9 +489,12 @@ class CFG(object):
                         tgts_valid = tgts_valid.long()
                     loss_valid = self.criterion(out_valid, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
-                    last_five_ave = running_validation_loss[-5:]
-                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
-                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
+                    if "margin" not in self.loss_criterion:
+                        out_valid = F.sigmoid(out_valid)
+                    out_mask = out_valid > threshold
+                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    accuracies.append(acc)
+                    t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
         elif "attn" in self.model_name:
@@ -531,9 +536,12 @@ class CFG(object):
                         tgts_valid = tgts_valid.long()
                     loss_valid = self.criterion(dec_o, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
-                    last_five_ave = running_validation_loss[-5:]
-                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
-                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
+                    if "margin" not in self.loss_criterion:
+                        out_valid = F.sigmoid(out_valid)
+                    out_mask = out_valid > threshold
+                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    accuracies.append(acc)
+                    t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
                     #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
         elif "bytenet" in self.model_name:
@@ -558,13 +566,16 @@ class CFG(object):
                     out_valid = out_valid.to(torch.device("cpu"))
                     loss_valid = self.criterion(out_valid, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
-                    last_five_ave = running_validation_loss[-5:]
-                    last_five_ave = sum(last_five_ave) / len(last_five_ave)
-                    t.set_postfix({"correct": correct, "loss": "{0:.6f}".format(last_five_ave)})
+                    if "margin" not in self.loss_criterion:
+                        out_valid = F.sigmoid(out_valid)
+                    out_mask = out_valid > threshold
+                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    accuracies.append(acc)
+                    t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
                     #correct += (dec_o.detach().max(1)[1] == tgts.detach()).sum()
 
-        self.valid_losses.append((sum(running_validation_loss) / num_batches, correct / len(self.ds)))
+        self.valid_losses.append((running_validation_loss, accuracies))
 
     def test(self):
         self.ds.set_split("test", self.args.num_samples)
