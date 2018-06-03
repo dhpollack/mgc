@@ -121,3 +121,6 @@ data/audioset/
 
 # nano files
 *.swp
+
+# ignore gh-pages stuff
+node_modules/

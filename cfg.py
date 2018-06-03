@@ -66,7 +66,7 @@ class CFG(object):
                             help='initial learning rate')
         parser.add_argument('--epochs', type=int, default=10,
                             help='upper epoch limit')
-        parser.add_argument('--batch-size', type=int, default=100, metavar='b',
+        parser.add_argument('--batch-size', type=int, default=50, metavar='b',
                             help='batch size')
         parser.add_argument('--freq-bands', type=int, default=224,
                             help='number of frequency bands to use')
@@ -125,6 +125,7 @@ class CFG(object):
                 "batch_size": self.batch_size
             }
             kwargs_decoder = {
+                "input_size": self.args.freq_bands,
                 "hidden_size": self.hidden_size,
                 "output_size": NUM_CLASSES,
                 "attn_model": "general",
@@ -169,22 +170,18 @@ class CFG(object):
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
-                    mgc_transforms.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
+                    mgc_transforms.MEL(sr=16000, n_fft=800, hop_length=400, n_mels=self.args.freq_bands),
                     mgc_transforms.BLC2CBL(),
                     mgc_transforms.Scale(),
-                    tvt.ToPILImage(),
-                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
-                    tvt.ToTensor(),
+                    mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
         elif "_mfcc_librosa" in self.model_name:
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
-                    mgc_transforms.MFCC2(sr=16000, n_fft=1600, hop_length=800, n_mfcc=12),
+                    mgc_transforms.MFCC2(sr=16000, n_fft=800, hop_length=400, n_mfcc=12),
                     mgc_transforms.BLC2CBL(),
                     mgc_transforms.Scale(),
-                    tvt.ToPILImage(),
-                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
-                    tvt.ToTensor(),
+                    mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
         elif "_mfcc" in self.model_name:
             sr = 16000
@@ -211,16 +208,13 @@ class CFG(object):
                     mgc_transforms.Sig2Features(ws, hs, td),
                     mgc_transforms.DummyDim(),
                     tat.BLC2CBL(),
-                    tvt.ToPILImage(),
-                    tvt.Resize((self.args.freq_bands, self.args.freq_bands)),
-                    tvt.ToTensor(),
+                    mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
         elif "attn" in self.model_name:
             T = tat.Compose([
                     tat.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
                     mgc_transforms.SqueezeDim(2),
                     tat.LC2CL(),
-                    #tat.BLC2CBL(),
                 ])
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
@@ -397,13 +391,14 @@ class CFG(object):
                     # Prepare input and output variables for decoder
                     #dec_size = [[[0] * encoder.hidden_size]*1]*self.batch_size
                     #print(encoder_output.detach().new(dec_size).size())
-                    enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
-                    dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
+                    #enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
+                    #dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
                     dec_h = encoder_hidden # Use last (forward) hidden state from encoder
                     #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
                     # run through decoder in one shot
-                    dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
+                    mb, _ = unpack(mb, batch_first=True)
+                    dec_o, dec_h, dec_attn = decoder(mb, dec_h, encoder_output)
                     dec_o.squeeze_()
                     #print(dec_o)
                     #print(dec_o.size(), dec_h.size(), dec_attn.size(), tgts.size())

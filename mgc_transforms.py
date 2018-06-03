@@ -351,7 +351,7 @@ class Sig2Features(object):
         return Feats
 
 class Scale(object):
-    """Scale import tensor to [-1, 1]
+    """Scale input tensor to [-1, 1]
     """
 
     def __call__(self, tensor):
@@ -366,6 +366,47 @@ class Scale(object):
         """
 
         return tensor / tensor.abs().max()
+
+class Resize(object):
+    """Resize input tensor to rsize
+    """
+
+    def __init__(self, rsize, rtype="lin"):
+        """
+
+        Args:
+            rsize (tuple): target size to which the input tensor will be resized
+
+            rtype ("nearest" or "lin"): the type of resizing to do
+
+        """
+        self.rsize = rsize
+        self.rtype = rtype
+
+    def __call__(self, tensor):
+        """
+
+        Args:
+            tensor (Tensor): any sized torch Tensor
+
+        Returns:
+            tensor (Tensor): torch Tensor resized to rsize
+
+        """
+
+        lin_map = ["linear", "bilinear", "trilinear"]
+        with torch.no_grad():
+            tensor.unsqueeze_(0)
+            if self.rtype in set(lin_map):
+                pass
+            elif 'lin' in self.rtype:
+                ndims = tensor.dim()  # 3, 4, or 5
+                assert ndims < 6 and ndims > 2
+                self.rtype = lin_map[int(ndims - 3)]
+            else:
+                self.rtype = "nearest"
+            tensor = torch.nn.functional.upsample(tensor, size=self.rsize, mode=self.rtype, align_corners=True)
+            return tensor.squeeze(0)
 
 class BinENC(object):
     """Transform labels into binary vector representation.  This is a poor-man's
