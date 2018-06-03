@@ -498,8 +498,8 @@ class CFG(object):
             # set model(s) into eval mode
             encoder.eval()
             decoder.eval()
-            with tqdm(total=num_batches, leave=False, position=1,
-                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+            with tqdm(total=num_batches, leave=False, position=2,
+                      postfix={"acc": acc, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, ((mb_valid, lengths), tgts_valid) in enumerate(self.dl):
                     # set model into train mode and clear gradients
 
@@ -521,8 +521,8 @@ class CFG(object):
                     #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
                     # run through decoder in one shot
-                    mb, _ = unpack(mb, batch_first=True)
-                    out_valid, dec_h, dec_attn = decoder(mb, dec_h, encoder_output)
+                    mb_valid, _ = unpack(mb_valid, batch_first=True)
+                    out_valid, dec_h, dec_attn = decoder(mb_valid, dec_h, encoder_output)
                     # calculate loss
                     out_valid = out_valid.to(torch.device("cpu"))
                     out_valid.squeeze_()
@@ -546,8 +546,8 @@ class CFG(object):
             # set model(s) into eval mode
             encoder.eval()
             decoder.eval()
-            with tqdm(total=num_batches, leave=False, position=1,
-                      postfix={"correct": correct, "loss": "{0:.6f}".format(0.)}) as t:
+            with tqdm(total=num_batches, leave=False, position=2,
+                      postfix={"acc": acc, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, (mb_valid, tgts_valid) in enumerate(self.dl):
                     # set inputs and targets
                     mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
