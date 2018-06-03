@@ -515,21 +515,22 @@ class CFG(object):
                     encoder_output, encoder_hidden = encoder(mb_valid, encoder_hidden)
 
                     #print(encoder_output.detach().new(dec_size).size())
-                    enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
-                    dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
+                    #enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
+                    #dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
                     dec_h = encoder_hidden # Use last (forward) hidden state from encoder
                     #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
 
                     # run through decoder in one shot
-                    dec_o, dec_h, dec_attn = decoder(dec_i, dec_h, encoder_output)
+                    mb, _ = unpack(mb, batch_first=True)
+                    out_valid, dec_h, dec_attn = decoder(mb, dec_h, encoder_output)
                     # calculate loss
-                    dec_o = dec_o.to(torch.device("cpu"))
-                    dec_o.squeeze_()
+                    out_valid = out_valid.to(torch.device("cpu"))
+                    out_valid.squeeze_()
                     if "margin" in self.loss_criterion:
-                        dec_o = F.sigmoid(dec_o)
+                        out_valid = F.sigmoid(out_valid)
                     if self.loss_criterion == "margin":
                         tgts_valid = tgts_valid.long()
-                    loss_valid = self.criterion(dec_o, tgts_valid)
+                    loss_valid = self.criterion(out_valid, tgts_valid)
                     running_validation_loss += [loss_valid.item()]
                     if "margin" not in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)
