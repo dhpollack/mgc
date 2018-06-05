@@ -56,7 +56,7 @@ class AUDIOSET(data.Dataset):
     def __init__(self, basedir="data/audioset", transform=None, target_transform=None,
                  dataset="balanced", split="train", use_cache=False, randomize=False,
                  noises_dir=None, mix_prob=.5, mix_vol=.2,
-                 otype='long', num_samples=None, add_no_label=False, use_multi_label=False):
+                 otype='long', num_samples=None, add_no_label=False, use_single_label=False):
 
         assert os.path.exists(basedir)
 
@@ -69,7 +69,7 @@ class AUDIOSET(data.Dataset):
         self.mix_prob = mix_prob
         self.mix_vol = lambda: random.uniform(-1, 1) * 0.3 * mix_vol + mix_vol
         self.add_no_label = add_no_label
-        self.use_multi_label = use_multi_label
+        self.use_single_label = use_single_label
         self.maxlen = 160013  # precalculated for balanced
         self.data = {}
         self.labels = {}
@@ -124,7 +124,7 @@ class AUDIOSET(data.Dataset):
         # get targets
         target = self.labels[self.split][index]
         # just choose one label at random for multi-label samples
-        if self.use_multi_label and self.split != "test":
+        if self.use_single_label and self.split != "test":
             target = [random.choice(target)]
 
         # get the filename at a particular index

@@ -164,9 +164,10 @@ class CFG(object):
         return model_list
 
     def get_dataloader(self):
+        usl = True if self.loss_criterion == "crossentropy" else False
         ds = AUDIOSET(self.data_path, dataset=self.args.dataset, noises_dir=self.noises_dir,
                       use_cache=self.use_cache, num_samples=self.args.num_samples,
-                      add_no_label=self.args.add_no_label)
+                      add_no_label=self.args.add_no_label, use_single_label=usl)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len),
@@ -486,8 +487,12 @@ class CFG(object):
                     running_validation_loss += [loss_valid.item()]
                     if "margin" not in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)
-                    out_mask = out_valid > threshold
-                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    if self.loss_criterion == "crossentropy":
+                        out_pred = out_valid.max(1)[1]
+                        acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
+                    else:
+                        out_mask = out_valid > threshold
+                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -534,8 +539,12 @@ class CFG(object):
                     running_validation_loss += [loss_valid.item()]
                     if "margin" not in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)
-                    out_mask = out_valid > threshold
-                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    if self.loss_criterion == "crossentropy":
+                        out_pred = out_valid.max(1)[1]
+                        acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
+                    else:
+                        out_mask = out_valid > threshold
+                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -564,8 +573,12 @@ class CFG(object):
                     running_validation_loss += [loss_valid.item()]
                     if "margin" not in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)
-                    out_mask = out_valid > threshold
-                    acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                    if self.loss_criterion == "crossentropy":
+                        out_pred = out_valid.max(1)[1]
+                        acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
+                    else:
+                        out_mask = out_valid > threshold
+                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
