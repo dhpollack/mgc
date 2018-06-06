@@ -92,6 +92,25 @@ class DummyDim(object):
 
         return tensor.unsqueeze(self.dim)
 
+class SimpleTrim(object):
+    """add a dummy dimension
+    """
+    def __init__(self, length=160000):
+        self.length = length
+    def __call__(self, tensor):
+        """
+
+        Args:
+            tensor (Tensor): Tensor without dummy time
+
+        Returns:
+            tensor (Tensor): Tensor with dummy dim
+
+        """
+        offset = self.length // 2
+        return tensor[(self.length - offset):(self.length + offset)]
+
+
 class SqueezeDim(object):
     """squeeze out a dimension
     """
@@ -366,6 +385,24 @@ class Scale(object):
         """
 
         return tensor / tensor.abs().max()
+
+class Norm(object):
+    """Normalize input tensor
+    """
+
+    def __call__(self, tensor):
+        """
+
+        Args:
+            tensor (Tensor): any sized torch Tensor
+
+        Returns:
+            tensor (Tensor): any sized torch Tensor normalized
+
+        """
+
+        return (tensor - tensor.mean()) / tensor.std()
+
 
 class Resize(object):
     """Resize input tensor to rsize

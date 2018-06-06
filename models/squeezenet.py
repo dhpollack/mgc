@@ -5,7 +5,7 @@ import torchvision.models as model_zoo
 def squeezenet(pretrained=False, num_genres=5, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
-    conv2d.weight.data[0] = 1. # ensure original spectrogram is maintained
+    #conv2d.weight.data[0] = 1. # ensure original spectrogram is maintained
 
     sqnet = model_zoo.squeezenet1_1(pretrained=pretrained, **kwargs)
     # change the last conv2d layer

@@ -32,7 +32,7 @@ class CFG(object):
         self.num_workers = args.num_workers
         self.log_interval = args.log_interval
         self.do_validate = args.validate
-        self.max_len = 160000  # 10 secs
+        self.max_len = 80000  # 160000 #10 secs
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.ngpu = torch.cuda.device_count()
@@ -170,18 +170,22 @@ class CFG(object):
                       add_no_label=self.args.add_no_label, use_single_label=usl)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
-                    #tat.PadTrim(self.max_len),
-                    mgc_transforms.MEL(sr=16000, n_fft=800, hop_length=400, n_mels=self.args.freq_bands),
-                    mgc_transforms.BLC2CBL(),
+                    #tat.PadTrim(self.max_len, fill_value=1e-8),
+                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.Norm(),
                     mgc_transforms.Scale(),
+                    mgc_transforms.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
+                    mgc_transforms.BLC2CBL(),
                     mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
         elif "_mfcc_librosa" in self.model_name:
             T = tat.Compose([
-                    #tat.PadTrim(self.max_len),
+                    #tat.PadTrim(self.max_len, fill_value=1e-8),
+                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.Norm(),
+                    mgc_transforms.Scale(),
                     mgc_transforms.MFCC2(sr=16000, n_fft=800, hop_length=400, n_mfcc=12),
                     mgc_transforms.BLC2CBL(),
-                    mgc_transforms.Scale(),
                     mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
         elif "_mfcc" in self.model_name:
@@ -203,9 +207,11 @@ class CFG(object):
                  }
 
             T = tat.Compose([
-                    tat.Scale(),
                     #tat.PadTrim(self.max_len, fill_value=1e-8),
                     mgc_transforms.Preemphasis(),
+                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.Norm(),
+                    mgc_transforms.Scale(),
                     mgc_transforms.Sig2Features(ws, hs, td),
                     mgc_transforms.DummyDim(),
                     tat.BLC2CBL(),
@@ -213,6 +219,9 @@ class CFG(object):
                 ])
         elif "attn" in self.model_name:
             T = tat.Compose([
+                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.Norm(),
+                    mgc_transforms.Scale(),
                     tat.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
                     mgc_transforms.SqueezeDim(2),
                     tat.LC2CL(),
@@ -220,12 +229,16 @@ class CFG(object):
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    tat.PadTrim(self.max_len - offset),
+                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.Norm(),
+                    mgc_transforms.Scale(),
+                    tat.PadTrim(self.max_len - offset, fill_value=1e-8),
                     tat.LC2CL(),
                 ])
         ds.transform = T
         if self.loss_criterion == "crossentropy":
             TT = mgc_transforms.XEntENC(ds.labels_dict)
+            #TT = mgc_transforms.BinENC(ds.labels_dict, dtype=torch.int64)
         else:
             TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.target_transform = TT
@@ -351,7 +364,7 @@ class CFG(object):
                         out = F.sigmoid(out)
                     if self.loss_criterion == "margin":
                         tgts = tgts.long()
-                    #print(out.size(), tgts.size())
+                    #print(tgts)
                     loss = self.criterion(out, tgts)
                     loss.backward()
                     self.optimizer.step()
