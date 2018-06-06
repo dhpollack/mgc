@@ -13,6 +13,7 @@ import math
 import time
 from itertools import accumulate, chain
 from glob import glob
+import tqdm
 
 # heavily inspired by:
 # https://github.com/patyork/python-voxforge-download/blob/master/python-voxforge-download.ipynb
@@ -146,7 +147,7 @@ class AUDIOSET(data.Dataset):
     def init_cache(self):
         print("initializing cache...")
         st = time.time()
-        for fn in self.data[self.split]:
+        for fn in tqdm.tqdm(self.data[self.split], leave=False):
             audio, sr = self._load_data(fn, load_from_cache=False)
             if audio is not None:
                 self.cache[fn] = (audio, sr)
