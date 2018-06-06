@@ -383,7 +383,7 @@ class Scale(object):
             tensor (Tensor): any sized torch Tensor scaled to [-1, 1]
 
         """
-
+        tensor = tensor - tensor.mean()
         return tensor / tensor.abs().max()
 
 class Norm(object):
