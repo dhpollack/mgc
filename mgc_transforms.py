@@ -31,8 +31,9 @@ class MEL(object):
             print("librosa not installed, cannot create spectrograms")
             return tensor
         L = []
-        for i in range(tensor.size(1)):
-            nparr = tensor[:, i].numpy() # (samples, )
+
+        for channel_tensor in tensor.transpose(1, 0):
+            nparr = channel_tensor.numpy() # (samples, )
             sgram = librosa.feature.melspectrogram(nparr, **self.kwargs) # (n_mels, hops)
             L.append(sgram)
         L = np.stack(L, 2) # (n_mels, hops, channels)

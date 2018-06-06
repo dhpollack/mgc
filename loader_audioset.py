@@ -145,13 +145,11 @@ class AUDIOSET(data.Dataset):
         return len(self.data[self.split])
 
     def init_cache(self):
-        print("initializing cache...")
         st = time.time()
         for fn in tqdm.tqdm(self.data[self.split], leave=False):
             audio, sr = self._load_data(fn, load_from_cache=False)
             if audio is not None:
                 self.cache[fn] = (audio, sr)
-        print("caching took {0:.2f}s to complete".format(time.time() - st))
 
     def find_max_len(self):
         """
