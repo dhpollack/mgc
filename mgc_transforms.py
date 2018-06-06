@@ -31,6 +31,7 @@ class MEL(object):
             print("librosa not installed, cannot create spectrograms")
             return tensor
         L = []
+        print(tensor.size())
         for i in range(tensor.size(1)):
             nparr = tensor[:, i].numpy() # (samples, )
             sgram = librosa.feature.melspectrogram(nparr, **self.kwargs) # (n_mels, hops)
@@ -384,7 +385,10 @@ class Scale(object):
 
         """
         tensor = tensor - tensor.mean()
-        return tensor / tensor.abs().max()
+        tensor = tensor / tensor.abs().max()
+        if tensor.dim() == 1:
+            tensor.unsqueeze_(1)
+        return tensor
 
 class Norm(object):
     """Normalize input tensor
