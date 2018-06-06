@@ -166,7 +166,7 @@ class CFG(object):
     def get_dataloader(self):
         usl = True if self.loss_criterion == "crossentropy" else False
         ds = AUDIOSET(self.data_path, dataset=self.args.dataset, noises_dir=self.noises_dir,
-                      use_cache=self.use_cache, num_samples=self.args.num_samples,
+                      use_cache=False, num_samples=self.args.num_samples,
                       add_no_label=self.args.add_no_label, use_single_label=usl)
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
@@ -237,6 +237,7 @@ class CFG(object):
         else:
             TT = mgc_transforms.BinENC(ds.labels_dict)
         ds.target_transform = TT
+        ds.use_cache = self.use_cache
         if self.use_cache:
             ds.init_cache()
         if self.use_precompute:
