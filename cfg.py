@@ -171,7 +171,7 @@ class CFG(object):
         if any(x in self.model_name for x in ["resnet34_conv", "resnet101_conv", "squeezenet"]):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len, fill_value=1e-8),
-                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.SimpleTrim(self.max_len),
                     mgc_transforms.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
                     mgc_transforms.Scale(),
                     mgc_transforms.BLC2CBL(),
@@ -180,8 +180,8 @@ class CFG(object):
         elif "_mfcc_librosa" in self.model_name:
             T = tat.Compose([
                     #tat.PadTrim(self.max_len, fill_value=1e-8),
-                    mgc_transforms.SimpleTrim(80000),
-                    mgc_transforms.MFCC2(sr=16000, n_fft=800, hop_length=400, n_mfcc=12),
+                    mgc_transforms.SimpleTrim(self.max_len),
+                    mgc_transforms.MFCC2(sr=16000, n_fft=600, hop_length=300, n_mfcc=12),
                     mgc_transforms.Scale(),
                     mgc_transforms.BLC2CBL(),
                     mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
@@ -207,7 +207,7 @@ class CFG(object):
             T = tat.Compose([
                     #tat.PadTrim(self.max_len, fill_value=1e-8),
                     mgc_transforms.Preemphasis(),
-                    mgc_transforms.SimpleTrim(80000),
+                    mgc_transforms.SimpleTrim(self.max_len),
                     mgc_transforms.Sig2Features(ws, hs, td),
                     mgc_transforms.DummyDim(),
                     mgc_transforms.Scale(),
@@ -216,8 +216,8 @@ class CFG(object):
                 ])
         elif "attn" in self.model_name:
             T = tat.Compose([
-                    mgc_transforms.SimpleTrim(80000),
-                    tat.MEL(sr=16000, n_fft=1600, hop_length=800, n_mels=self.args.freq_bands),
+                    mgc_transforms.SimpleTrim(self.max_len),
+                    tat.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
                     mgc_transforms.Scale(),
                     mgc_transforms.SqueezeDim(2),
                     tat.LC2CL(),
@@ -225,8 +225,8 @@ class CFG(object):
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    mgc_transforms.SimpleTrim(80000),
-                    tat.PadTrim(self.max_len - offset, fill_value=1e-8),
+                    mgc_transforms.SimpleTrim(self.max_len),
+                    #tat.PadTrim(self.max_len - offset, fill_value=1e-8),
                     mgc_transforms.Scale(),
                     tat.LC2CL(),
                 ])

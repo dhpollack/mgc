@@ -259,7 +259,11 @@ class AUDIOSET(data.Dataset):
                 if self.split == "train" and self.noises_dir and self.mix_prob > random.random():
                     audio = self._add_noise(audio, sr)
                 if self.transform is not None:
-                    audio = self.transform(audio)
+                    try:
+                        audio = self.transform(audio)
+                    except:
+                        print(data_file)
+                        raise
                 return audio, sr
         else:
             return self.cache[data_file]
