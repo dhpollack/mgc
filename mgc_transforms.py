@@ -444,7 +444,7 @@ class XEntENC(object):
     """Transform labels from a single text into an int representation.
        This is a poor-man's version of the sklearn LabelEncoder.
     """
-    def __init__(self, vocab, dtype=torch.int64):
+    def __init__(self, vocab, dtype=torch.int):
         """
 
         Args:

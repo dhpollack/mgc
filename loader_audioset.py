@@ -123,21 +123,20 @@ class AUDIOSET(data.Dataset):
 
         # get targets
         target = self.labels[self.split][index]
-        # just choose one label at random for multi-label samples
+        # just choose one label for multi-label samples
         if self.use_single_label and self.split != "test":
-            target = [random.choice(target)]
+            #target = [random.choice(target)]
+            target = [target[0]]
+        # transform labels
+        if self.target_transform is not None:
+            target = self.target_transform(target)
 
         # get the filename at a particular index
         fn = self.data[self.split][index]
-
         # load either the file or the cache output of the file after any transformations
         # Note: audio transformations are done in the _load_data function
         audio, sr = self._load_data(fn, self.use_cache)
         assert sr == 16000  # this can be removed for a generic algo
-
-        # transform labels
-        if self.target_transform is not None:
-            target = self.target_transform(target)
 
         return audio, target
 
