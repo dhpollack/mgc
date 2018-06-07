@@ -35,6 +35,7 @@ class MEL(object):
         for channel_tensor in tensor.transpose(1, 0):
             nparr = channel_tensor.numpy() # (samples, )
             sgram = librosa.feature.melspectrogram(nparr, **self.kwargs) # (n_mels, hops)
+            sgram = librosa.power_to_db(sgram, ref=np.max)
             L.append(sgram)
         L = np.stack(L, 2) # (n_mels, hops, channels)
         tensor = torch.from_numpy(L).type_as(tensor)
