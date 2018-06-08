@@ -274,7 +274,7 @@ class AUDIOSET(data.Dataset):
                 self.cache_pool.apply_async(self._update_cache, [data_file])
             return audio, sr
 
-    def update_cache(self, fn):
+    def _update_cache(self, fn):
         audio, sr = self._load_data(fn, load_from_cache=False)
         self.cache[fn] = (audio, sr)
 
