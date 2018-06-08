@@ -67,8 +67,8 @@ class MFCC2(object):
             print("librosa not installed, cannot create spectrograms")
             return tensor
         L = []
-        for i in range(tensor.size(1)):
-            nparr = tensor[:, i].numpy() # (samples, )
+        for channel_tensor in tensor.transpose(1, 0):
+            nparr = channel_tensor.numpy() # (samples, )
             sgram = librosa.feature.mfcc(nparr, **self.kwargs) # (n_mels, hops)
             L.append(sgram)
         L = np.stack(L, 2) # (n_mels, hops, channels)
@@ -372,8 +372,11 @@ class Sig2Features(object):
         return Feats
 
 class Scale(object):
-    """Scale input tensor to [-1, 1]
+    """Scale input tensor
     """
+
+    def __init__(self, stype=0):
+        self.stype = stype
 
     def __call__(self, tensor):
         """
@@ -382,13 +385,14 @@ class Scale(object):
             tensor (Tensor): any sized torch Tensor
 
         Returns:
-            tensor (Tensor): any sized torch Tensor scaled to [-1, 1]
+            tensor (Tensor): any sized torch Tensor scaled to [-1, 1] or [0, 1]
 
         """
-        tensor = tensor - tensor.mean()
+        if self.stype == 1:
+            tensor = tensor - tensor.min()
+        else:
+            tensor = tensor - tensor.mean()
         tensor = tensor / tensor.abs().max()
-        if tensor.dim() == 1:
-            tensor.unsqueeze_(1)
         return tensor
 
 class Norm(object):
