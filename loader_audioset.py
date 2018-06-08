@@ -220,6 +220,7 @@ class AUDIOSET(data.Dataset):
             target_key = os.path.basename(audio_path).split(".")[0]
             labels.append([self.labels_dict[k]["label_id"] for k in segments[target_key]["tags"]
                            if k in self.labels_dict])
+        assert len(amanifest) == len(labels)
         return amanifest, labels
 
     def _load_data(self, data_file, load_from_cache=False):

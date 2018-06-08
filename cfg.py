@@ -32,7 +32,7 @@ class CFG(object):
         self.num_workers = args.num_workers
         self.log_interval = args.log_interval
         self.do_validate = args.validate
-        self.max_len = 80000  # 160000 #10 secs
+        self.max_len = args.max_len if args.max_len else 80000 # 160000 #10 secs
         self.use_cuda = torch.cuda.is_available()
         self.device = torch.device("cuda" if self.use_cuda else "cpu")
         self.ngpu = torch.cuda.device_count()
@@ -92,6 +92,8 @@ class CFG(object):
                             help='reports per epoch')
         parser.add_argument('--chkpt-interval', type=int, default=10,
                             help='how often to save checkpoints')
+        parser.add_argument('--max-len', type=int, default=None,
+                            help='max length of sample')
         parser.add_argument('--model-name', type=str, default="resnet34_conv",
                             help='name of model to use')
         parser.add_argument('--loss-criterion', type=str, default="bce",
