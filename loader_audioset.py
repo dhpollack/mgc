@@ -147,7 +147,6 @@ class AUDIOSET(data.Dataset):
         return len(self.data[self.split])
 
     def init_cache(self):
-        st = time.time()
         for fn in tqdm.tqdm(self.data[self.split], leave=False):
             audio, sr = self._load_data(fn, load_from_cache=False)
             if audio is not None:
@@ -270,8 +269,8 @@ class AUDIOSET(data.Dataset):
                 return audio, sr
         else:
             audio, sr = self.cache[data_file]
-            if self.use_cache and random.random() < .05:
-                self.cache_pool.apply_async(self._update_cache, [data_file])
+            #if self.use_cache and random.random() < .05:
+            #    self.cache_pool.apply_async(self._update_cache, [data_file])
             return audio, sr
 
     def _update_cache(self, fn):
