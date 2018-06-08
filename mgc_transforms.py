@@ -113,7 +113,7 @@ class SimpleTrim(object):
         t, n = tensor.size()
         len_half = self.length // 2
         offset = np.random.randint(self.pad + len_half, t - (self.pad + len_half))
-        return tensor[(self.length - offset):(self.length + offset)]
+        return tensor[(offset - len_half):(offset + len_half)]
 
 
 class SqueezeDim(object):

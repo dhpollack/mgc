@@ -141,9 +141,6 @@ class AUDIOSET(data.Dataset):
         audio, sr = self._load_data(fn, self.use_cache)
         assert sr == 16000  # this can be removed for a generic algo
 
-        if self.use_cache and random.random() < .05:
-            self.cache_pool.apply_async(self.update_cache, [fn])
-
         return audio, target
 
     def __len__(self):
@@ -155,10 +152,6 @@ class AUDIOSET(data.Dataset):
             audio, sr = self._load_data(fn, load_from_cache=False)
             if audio is not None:
                 self.cache[fn] = (audio, sr)
-
-    def update_cache(self, fn):
-        audio, sr = self._load_data(fn, load_from_cache=False)
-        self.cache[fn] = (audio, sr)
 
     def find_max_len(self):
         """
@@ -276,7 +269,14 @@ class AUDIOSET(data.Dataset):
                         raise
                 return audio, sr
         else:
-            return self.cache[data_file]
+            audio, sr = self.cache[data_file]
+            if self.use_cache and random.random() < .05:
+                self.cache_pool.apply_async(self._update_cache, [data_file])
+            return audio, sr
+
+    def update_cache(self, fn):
+        audio, sr = self._load_data(fn, load_from_cache=False)
+        self.cache[fn] = (audio, sr)
 
     def _add_noise(self, audio, audio_sr):
         """
