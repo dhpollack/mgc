@@ -97,8 +97,9 @@ class DummyDim(object):
 class SimpleTrim(object):
     """add a dummy dimension
     """
-    def __init__(self, length=160000):
+    def __init__(self, length=160000, pad=8000):
         self.length = length
+        self.pad = pad
     def __call__(self, tensor):
         """
 
@@ -109,7 +110,9 @@ class SimpleTrim(object):
             tensor (Tensor): Tensor with dummy dim
 
         """
-        offset = self.length // 2
+        t, n = tensor.size()
+        len_half = self.length // 2
+        offset = np.random.randint(self.pad + len_half, t - (self.pad + len_half))
         return tensor[(self.length - offset):(self.length + offset)]
 
 

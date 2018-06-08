@@ -14,6 +14,7 @@ import time
 from itertools import accumulate, chain
 from glob import glob
 import tqdm
+from multiprocessing import Pool
 
 # heavily inspired by:
 # https://github.com/patyork/python-voxforge-download/blob/master/python-voxforge-download.ipynb
@@ -75,6 +76,7 @@ class AUDIOSET(data.Dataset):
         self.data = {}
         self.labels = {}
         self.cache = {}
+        self.cache_pool = Pool(processes=5)
 
         self.transform = transform
         self.target_transform = target_transform
@@ -139,6 +141,9 @@ class AUDIOSET(data.Dataset):
         audio, sr = self._load_data(fn, self.use_cache)
         assert sr == 16000  # this can be removed for a generic algo
 
+        if self.use_cache and random.random() < .05:
+            self.cache_pool.apply_async(self.update_cache, [fn])
+
         return audio, target
 
     def __len__(self):
@@ -150,6 +155,10 @@ class AUDIOSET(data.Dataset):
             audio, sr = self._load_data(fn, load_from_cache=False)
             if audio is not None:
                 self.cache[fn] = (audio, sr)
+
+    def update_cache(self, fn):
+        audio, sr = self._load_data(fn, load_from_cache=False)
+        self.cache[fn] = (audio, sr)
 
     def find_max_len(self):
         """

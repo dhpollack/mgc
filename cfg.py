@@ -175,7 +175,7 @@ class CFG(object):
                     #tat.PadTrim(self.max_len, fill_value=1e-8),
                     mgc_transforms.SimpleTrim(self.max_len),
                     mgc_transforms.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
-                    mgc_transforms.Scale(stype=1),
+                    #mgc_transforms.Scale(),
                     mgc_transforms.BLC2CBL(),
                     mgc_transforms.Resize((self.args.freq_bands, self.args.freq_bands)),
                 ])
