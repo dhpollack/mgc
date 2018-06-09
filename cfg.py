@@ -219,10 +219,9 @@ class CFG(object):
         elif "attn" in self.model_name:
             T = tat.Compose([
                     mgc_transforms.SimpleTrim(self.max_len),
-                    tat.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
+                    mgc_transforms.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
                     mgc_transforms.Scale(),
-                    mgc_transforms.SqueezeDim(2),
-                    tat.LC2CL(),
+                    mgc_transforms.BLC2CBL(),
                 ])
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
@@ -368,7 +367,7 @@ class CFG(object):
                     self.optimizer.step()
                     epoch_losses.append(loss.item())
                     if self.tqdmiter:
-                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.set_postfix({"loss": "{0:.6f}".format(epoch_losses[-1])})
                         self.tqdmiter.refresh()
                     else:
                         print(epoch_losses[-1])
@@ -428,7 +427,7 @@ class CFG(object):
                     self.optimizer.step()
                     epoch_losses.append(loss.item())
                     if self.tqdmiter:
-                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.set_postfix({"loss": "{0:.6f}".format(epoch_losses[-1])})
                         self.tqdmiter.refresh()
                     else:
                         print(epoch_losses[-1])
@@ -461,7 +460,7 @@ class CFG(object):
                     self.optimizer.step()
                     epoch_losses.append(loss.item())
                     if self.tqdmiter:
-                        self.tqdmiter.set_postfix({"epoch": epoch, "loss": "{0:.6f}".format(epoch_losses[-1])})
+                        self.tqdmiter.set_postfix({"loss": "{0:.6f}".format(epoch_losses[-1])})
                         self.tqdmiter.refresh()
                     else:
                         print(epoch_losses[-1])
@@ -516,7 +515,7 @@ class CFG(object):
             # set model(s) into eval mode
             encoder.eval()
             decoder.eval()
-            with tqdm(total=num_batches, leave=False, position=2,
+            with tqdm(total=num_batches, leave=True, position=2,
                       postfix={"acc": acc, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, ((mb_valid, lengths), tgts_valid) in enumerate(self.dl):
                     # set model into train mode and clear gradients
@@ -568,7 +567,7 @@ class CFG(object):
             # set model(s) into eval mode
             encoder.eval()
             decoder.eval()
-            with tqdm(total=num_batches, leave=False, position=2,
+            with tqdm(total=num_batches, leave=True, position=2,
                       postfix={"acc": acc, "loss": "{0:.6f}".format(0.)}) as t:
                 for i, (mb_valid, tgts_valid) in enumerate(self.dl):
                     # set inputs and targets
