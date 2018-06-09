@@ -220,7 +220,7 @@ class CFG(object):
             T = tat.Compose([
                     mgc_transforms.SimpleTrim(self.max_len),
                     mgc_transforms.MEL(sr=16000, n_fft=600, hop_length=300, n_mels=self.args.freq_bands//2),
-                    mgc_transforms.Scale(),
+                    #mgc_transforms.Scale(),
                     mgc_transforms.SqueezeDim(2),
                     tat.LC2CL(),
                 ])
