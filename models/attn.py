@@ -66,7 +66,7 @@ class Attn(nn.Module):
             return energy
 
 class LuongAttnDecoderRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, attn_model="dot", n_layers=1, dropout=0.1, batch_size=1):
+    def __init__(self, input_size, hidden_size, output_size, attn_model="dot", n_layers=1, dropout=0.1, batch_size=1, spec_len=161):
         super(LuongAttnDecoderRNN, self).__init__()
 
         # Keep for reference
@@ -82,7 +82,7 @@ class LuongAttnDecoderRNN(nn.Module):
         self.gru = nn.GRU(input_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.concat = nn.Linear(hidden_size * 2, hidden_size)
         self.out_downsample = nn.Conv1d(hidden_size, hidden_size // 10, 1)
-        self.out = nn.Linear(int(201 * 50), output_size)
+        self.out = nn.Linear(int(spec_len * 50), output_size)
         # Choose attention model
         if attn_model != 'none':
             self.attn = Attn(hidden_size, method=attn_model, batch_size=batch_size)
