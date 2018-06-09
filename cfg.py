@@ -471,7 +471,7 @@ class CFG(object):
                             self.ds.set_split("train")
                     t.update()
         self.train_losses.append(epoch_losses)
-        if epoch % (self.args.chkpt_interval // 2) == 0 and epoch != 0:
+        if epoch % (self.args.chkpt_interval // 2) == 0 and epoch != 0 and self.use_cache:
             self.ds.init_cache()
 
     def validate(self, epoch):
