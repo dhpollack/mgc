@@ -119,7 +119,7 @@ class CFG(object):
         elif "squeezenet" in self.model_name:
             model_list = [models.squeezenet.squeezenet(use_pretrained, num_genres=NUM_CLASSES)]
         elif "attn" in self.model_name:
-            self.hidden_size = 500
+            self.hidden_size = 2500
             kwargs_encoder = {
                 "input_size": self.args.freq_bands // 2,
                 "hidden_size": self.hidden_size,

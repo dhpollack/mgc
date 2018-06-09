@@ -82,7 +82,7 @@ class LuongAttnDecoderRNN(nn.Module):
         self.gru = nn.GRU(input_size, hidden_size, n_layers, dropout=dropout, batch_first=True)
         self.concat = nn.Linear(hidden_size * 2, hidden_size)
         self.out_downsample = nn.Conv1d(hidden_size, hidden_size // 10, 1)
-        self.out = nn.Linear(int(spec_len * 50), output_size)
+        self.out = nn.Linear(int(spec_len * (hidden_size // 10)), output_size)
         # Choose attention model
         if attn_model != 'none':
             self.attn = Attn(hidden_size, method=attn_model, batch_size=batch_size)
@@ -115,7 +115,7 @@ class LuongAttnDecoderRNN(nn.Module):
 
         # Finally predict next token (Luong eq. 6, without softmax)
         concat_output = concat_output.transpose(2, 1)
-        concat_output = self.out_downsample(concat_output)
+        concat_output = F.leaky_relu(self.out_downsample(concat_output))
         concat_output = concat_output.view(self.batch_size, -1)
         output = self.out(concat_output)
 
