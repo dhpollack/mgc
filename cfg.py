@@ -121,13 +121,13 @@ class CFG(object):
         elif "attn" in self.model_name:
             self.hidden_size = 500
             kwargs_encoder = {
-                "input_size": self.args.freq_bands,
+                "input_size": self.args.freq_bands // 2,
                 "hidden_size": self.hidden_size,
                 "n_layers": 1,
                 "batch_size": self.batch_size
             }
             kwargs_decoder = {
-                "input_size": self.args.freq_bands,
+                "input_size": self.args.freq_bands // 2,
                 "hidden_size": self.hidden_size,
                 "output_size": NUM_CLASSES,
                 "attn_model": "general",
