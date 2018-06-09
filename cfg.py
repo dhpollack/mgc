@@ -52,7 +52,7 @@ class CFG(object):
         self.ds, self.dl = self.get_dataloader()
         self.model_list = self.get_models(state_dicts["models"])
         self.epochs, self.criterion, self.optimizer, self.scheduler = self.init_optimizer(state_dicts["optimizer"])
-        if self.ngpu > 1:
+        if self.ngpu > 1 and "attn" not in self.model_name:
             self.model_list = [nn.DataParallel(m) for m in self.model_list]
         self.valid_losses = []
         self.train_losses = []

@@ -14,7 +14,6 @@ import time
 from itertools import accumulate, chain
 from glob import glob
 import tqdm
-from multiprocessing import Pool
 
 # heavily inspired by:
 # https://github.com/patyork/python-voxforge-download/blob/master/python-voxforge-download.ipynb
@@ -76,7 +75,6 @@ class AUDIOSET(data.Dataset):
         self.data = {}
         self.labels = {}
         self.cache = {}
-        self.cache_pool = Pool(processes=5)
 
         self.transform = transform
         self.target_transform = target_transform
