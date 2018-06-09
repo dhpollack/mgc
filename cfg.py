@@ -300,9 +300,9 @@ class CFG(object):
             opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
             if self.dataset == "unbalanced":
-                epochs = [25, 40]
+                epochs = [25, 40, 100]
             else:
-                epochs = [70, 100]
+                epochs = [30, 100, 250]
             opt_type = torch.optim.SGD
             opt_params = [
                 {"params": model_list[0].parameters(), "lr": self.args.lr},
@@ -471,7 +471,7 @@ class CFG(object):
                             self.ds.set_split("train")
                     t.update()
         self.train_losses.append(epoch_losses)
-        if epoch % self.args.chkpt_interval == 0 and epoch != 0:
+        if epoch % (self.args.chkpt_interval // 2) == 0 and epoch != 0:
             self.ds.init_cache()
 
     def validate(self, epoch):
