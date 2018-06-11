@@ -227,8 +227,8 @@ class CFG(object):
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    mgc_transforms.SimpleTrim(self.max_len),
-                    #tat.PadTrim(self.max_len - offset, fill_value=1e-8),
+                    #mgc_transforms.SimpleTrim(self.max_len),
+                    tat.PadTrim(self.max_len - offset, fill_value=1e-8),
                     mgc_transforms.Scale(),
                     tat.LC2CL(),
                 ])
@@ -300,9 +300,9 @@ class CFG(object):
             opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
             if self.dataset == "unbalanced":
-                epochs = [25, 40, 100]
+                epochs = [8, 20, 70]
             else:
-                epochs = [30, 100, 250]
+                epochs = [25, 70, 100]
             opt_type = torch.optim.SGD
             opt_params = [
                 {"params": model_list[0].parameters(), "lr": self.args.lr},
@@ -668,8 +668,10 @@ class CFG(object):
             "optimizer": self.optimizer.module.state_dict() if isinstance(self.optimizer, nn.DataParallel) else self.optimizer.state_dict(),
             "epoch": epoch+1,
         }
+        en = epoch + 1 if epoch != self.epochs[-1] - 1 else "final"
         is_noisy = "_noisy" if self.noises_dir else ""
-        sname = "output/states/{}{}_{}_{}.pt".format(self.model_name, is_noisy, self.loss_criterion, epoch+1)
+        cached = "_cached" if self.use_cache else ""
+        sname = "output/states/{}_{}_{}{}{}.pt".format(self.model_name, self.loss_criterion, en, is_noisy, cached)
         torch.save(mstate, sname)
 
     def precompute(self, m):

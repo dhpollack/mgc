@@ -16,7 +16,10 @@ if __name__ == '__main__':
             train(epoch, early_stop=None)
             if config.save_model and (epoch % config.chkpt_interval == 0 or epoch+1 == epochs):
                 save(epoch)
-    with open("output/losses_{}_{}_{}.json".format(config.model_name, config.loss_criterion, cur_epoch), "w") as f:
+    cached = "cache" if config.use_cache else "nocache"
+    noise = "noise" if config.noises_dir else "nonoise"
+    json_name = "output/losses_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, noise, cached)
+    with open(json_name, "w") as f:
         losses = {
             "train_losses": config.train_losses,
             "valid_losses": config.valid_losses,
