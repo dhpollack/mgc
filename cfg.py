@@ -471,7 +471,7 @@ class CFG(object):
                             self.ds.set_split("train")
                     t.update()
         self.train_losses.append(epoch_losses)
-        if epoch % (self.args.chkpt_interval // 2) == 0 and epoch != 0 and self.use_cache:
+        if epoch % 10 == 0 and epoch != 0 and self.use_cache:
             self.ds.init_cache()
 
     def validate(self, epoch):
@@ -670,8 +670,9 @@ class CFG(object):
         }
         en = epoch + 1 if epoch != self.epochs[-1] - 1 else "final"
         is_noisy = "_noisy" if self.noises_dir else ""
+        ds = self.dataset
         cached = "_cached" if self.use_cache else ""
-        sname = "output/states/{}_{}_{}{}{}.pt".format(self.model_name, self.loss_criterion, en, is_noisy, cached)
+        sname = "output/states/{}_{}_{}_{}{}{}.pt".format(self.model_name, self.loss_criterion, ds, en, is_noisy, cached)
         torch.save(mstate, sname)
 
     def precompute(self, m):

@@ -14,11 +14,11 @@ if __name__ == '__main__':
         config.tqdmiter = t
         for epoch in t:
             train(epoch, early_stop=None)
-            if config.save_model and (epoch % config.chkpt_interval == 0 or epoch+1 == epochs):
+            if config.save_model and (epoch % config.chkpt_interval == 0 or epoch + 1 == epochs):
                 save(epoch)
     cached = "cache" if config.use_cache else "nocache"
     noise = "noise" if config.noises_dir else "nonoise"
-    json_name = "output/losses_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, noise, cached)
+    json_name = "output/losses_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, config.dataset, noise, cached)
     with open(json_name, "w") as f:
         losses = {
             "train_losses": config.train_losses,
