@@ -562,8 +562,14 @@ class CFG(object):
                         out_pred = out_valid.max(1)[1]
                         acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
                     else:
-                        out_mask = out_valid > threshold
-                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                        acc = 0.
+                        num_out = out_valid.size(0)
+                        for ov, tgt in zip(out_valid, tgts_valid):
+                            tgt = torch.LongTensor([i for i, x in enumerate(tgt) if x == 1])
+                            num_tgt = tgt.size(0)
+                            ov = torch.topk(ov, num_tgt)[1]
+                            correct = len(np.intersect1d(tgt.numpy(), ov.numpy()))
+                            acc += (correct / num_tgt) / num_out
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -596,8 +602,14 @@ class CFG(object):
                         out_pred = out_valid.max(1)[1]
                         acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
                     else:
-                        out_mask = out_valid > threshold
-                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                        acc = 0.
+                        num_out = out_valid.size(0)
+                        for ov, tgt in zip(out_valid, tgts_valid):
+                            tgt = torch.LongTensor([i for i, x in enumerate(tgt) if x == 1])
+                            num_tgt = tgt.size(0)
+                            ov = torch.topk(ov, num_tgt)[1]
+                            correct = len(np.intersect1d(tgt.numpy(), ov.numpy()))
+                            acc += (correct / num_tgt) / num_out
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -634,12 +646,13 @@ class CFG(object):
                         #out = F.softmax(out, dim = 1)
                     # out is either size (N, C) or (N, )
                     for tgt, o in zip(tgts, out):
+                        o_mask = torch.zeros_like(o)
+                        o_mask[torch.topk(o, tgt.sum())[1]] = 1.
+                        o_mask = o_mask.numpy()
+                        o_mask = o_mask.astype(np.bool)
                         tgt = tgt.numpy()
                         tgt_mask = tgt == 1.
                         counter_array[tgt_mask, 0] += 1
-                        o_mask = o >= thresh
-                        o_mask = o_mask.numpy()
-                        o_mask = o_mask.astype(np.bool)
                         #print(o_mask); break;
 
                         counter_array[o_mask, 1] += 1
