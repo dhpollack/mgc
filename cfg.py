@@ -647,7 +647,7 @@ class CFG(object):
                     # out is either size (N, C) or (N, )
                     for tgt, o in zip(tgts, out):
                         o_mask = torch.zeros_like(o)
-                        o_mask[torch.topk(o, tgt.sum())[1]] = 1.
+                        o_mask[torch.topk(o, tgt.sum().int().item())[1]] = 1.
                         o_mask = o_mask.numpy()
                         o_mask = o_mask.astype(np.bool)
                         tgt = tgt.numpy()
