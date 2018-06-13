@@ -6,12 +6,14 @@ def resnet34(pretrained=False, num_genres=2, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
     conv2d.weight.data[0] = 1. # ensure original spectrogram is maintained
+    inorm = nn.InstanceNorm2d(3)
+    preprocess = nn.Sequential(conv2d, inorm)
 
     resnet = model_zoo.resnet34(pretrained=pretrained, **kwargs)
     # change the last fc layer
     resnet.fc = nn.Linear(512 * 1, num_genres)
 
-    model = nn.Sequential(conv2d, resnet)
+    model = nn.Sequential(preprocess, resnet)
 
     return model
 

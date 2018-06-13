@@ -227,8 +227,8 @@ class CFG(object):
         elif "bytenet" in self.model_name:
             offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    mgc_transforms.SimpleTrim(self.max_len),
-                    #tat.PadTrim(self.max_len - offset, fill_value=1e-8),
+                    #mgc_transforms.SimpleTrim(self.max_len),
+                    tat.PadTrim(self.max_len - offset, fill_value=1e-8),
                     mgc_transforms.Scale(),
                     tat.LC2CL(),
                 ])
@@ -300,9 +300,9 @@ class CFG(object):
             opt_kwargs = {"amsgrad": True}
         elif any(x in self.model_name for x in ["attn", "bytenet"]):
             if self.dataset == "unbalanced":
-                epochs = [25, 40, 100]
+                epochs = [8, 20, 70]
             else:
-                epochs = [30, 100, 250]
+                epochs = [25, 70, 100]
             opt_type = torch.optim.SGD
             opt_params = [
                 {"params": model_list[0].parameters(), "lr": self.args.lr},
@@ -471,7 +471,7 @@ class CFG(object):
                             self.ds.set_split("train")
                     t.update()
         self.train_losses.append(epoch_losses)
-        if epoch % (self.args.chkpt_interval // 2) == 0 and epoch != 0 and self.use_cache:
+        if epoch % 10 == 0 and epoch != 0 and self.use_cache:
             self.ds.init_cache()
 
     def validate(self, epoch):
@@ -504,8 +504,14 @@ class CFG(object):
                         out_pred = out_valid.max(1)[1]
                         acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
                     else:
-                        out_mask = out_valid > threshold
-                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                        acc = 0.
+                        num_out = out_valid.size(0)
+                        for ov, tgt in zip(out_valid, tgts_valid):
+                            tgt = torch.LongTensor([i for i, x in enumerate(tgt) if x == 1])
+                            num_tgt = tgt.size(0)
+                            ov = torch.topk(ov, num_tgt)[1]
+                            correct = len(np.intersect1d(tgt.numpy(), ov.numpy()))
+                            acc += (correct / num_tgt) / num_out
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -556,8 +562,14 @@ class CFG(object):
                         out_pred = out_valid.max(1)[1]
                         acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
                     else:
-                        out_mask = out_valid > threshold
-                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                        acc = 0.
+                        num_out = out_valid.size(0)
+                        for ov, tgt in zip(out_valid, tgts_valid):
+                            tgt = torch.LongTensor([i for i, x in enumerate(tgt) if x == 1])
+                            num_tgt = tgt.size(0)
+                            ov = torch.topk(ov, num_tgt)[1]
+                            correct = len(np.intersect1d(tgt.numpy(), ov.numpy()))
+                            acc += (correct / num_tgt) / num_out
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -590,8 +602,14 @@ class CFG(object):
                         out_pred = out_valid.max(1)[1]
                         acc = (out_pred == tgts_valid).sum().item() / tgts_valid.size(0)
                     else:
-                        out_mask = out_valid > threshold
-                        acc = np.logical_and(out_mask.numpy()==True, tgts_valid.numpy()==True).sum() / (tgts_valid.numpy()==True).sum()
+                        acc = 0.
+                        num_out = out_valid.size(0)
+                        for ov, tgt in zip(out_valid, tgts_valid):
+                            tgt = torch.LongTensor([i for i, x in enumerate(tgt) if x == 1])
+                            num_tgt = tgt.size(0)
+                            ov = torch.topk(ov, num_tgt)[1]
+                            correct = len(np.intersect1d(tgt.numpy(), ov.numpy()))
+                            acc += (correct / num_tgt) / num_out
                     accuracies.append(acc)
                     t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(running_validation_loss[-1])})
                     t.update()
@@ -628,12 +646,13 @@ class CFG(object):
                         #out = F.softmax(out, dim = 1)
                     # out is either size (N, C) or (N, )
                     for tgt, o in zip(tgts, out):
+                        o_mask = torch.zeros_like(o)
+                        o_mask[torch.topk(o, tgt.sum().int().item())[1]] = 1.
+                        o_mask = o_mask.numpy()
+                        o_mask = o_mask.astype(np.bool)
                         tgt = tgt.numpy()
                         tgt_mask = tgt == 1.
                         counter_array[tgt_mask, 0] += 1
-                        o_mask = o >= thresh
-                        o_mask = o_mask.numpy()
-                        o_mask = o_mask.astype(np.bool)
                         #print(o_mask); break;
 
                         counter_array[o_mask, 1] += 1
@@ -668,8 +687,11 @@ class CFG(object):
             "optimizer": self.optimizer.module.state_dict() if isinstance(self.optimizer, nn.DataParallel) else self.optimizer.state_dict(),
             "epoch": epoch+1,
         }
+        en = epoch + 1 if epoch != self.epochs[-1] - 1 else "final"
         is_noisy = "_noisy" if self.noises_dir else ""
-        sname = "output/states/{}{}_{}_{}.pt".format(self.model_name, is_noisy, self.loss_criterion, epoch+1)
+        ds = self.dataset
+        cached = "_cached" if self.use_cache else ""
+        sname = "output/states/{}_{}_{}_{}{}{}.pt".format(self.model_name, self.loss_criterion, ds, en, is_noisy, cached)
         torch.save(mstate, sname)
 
     def precompute(self, m):
