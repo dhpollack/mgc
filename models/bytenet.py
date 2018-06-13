@@ -8,12 +8,14 @@ import torchvision.models as model_zoo
 def resnet34_decoder(pretrained=False, d=40, num_classes=2, **kwargs):
 
     conv2d = nn.Conv2d(1, 3, 1) # turn 1 channel into 3 to simulate image
+    inorm = nn.InstanceNorm2d(3)
+    preprocess = nn.Sequential(conv2d, inorm)
 
     resnet = model_zoo.resnet34(pretrained=pretrained)
     # change the last fc layer
     resnet.fc = nn.Linear(512 * 1, num_classes)
 
-    model = nn.Sequential(conv2d, resnet)
+    model = nn.Sequential(preprocess, resnet)
 
     return model
 
@@ -50,7 +52,7 @@ class ResBlock(nn.Module):
     Args:
         d (int): size of inner track of network.
         r (int): size of dilation
-        k (int): size of kernel in dilated convolution (odd numbers only)
+        k (int): size of kernel in dilated convolution
         casual (bool): determines how to pad the casual conv layer. See notes.
     """
     def __init__(self, d, r=1, k=3, casual=False, use_bias=False):
@@ -64,10 +66,11 @@ class ResBlock(nn.Module):
         self.conv1x1_1 = nn.Conv1d(2*d, d, kernel_size=1, bias=ub) # output is "d"
         self.layernorm2 = nn.InstanceNorm1d(num_features=d, affine=True)
         self.relu2 = nn.ReLU(inplace=True)
+        p = _same_pad(k,r)
         if casual:
-            padding = (_same_pad(k,r), 0)
+            padding = (p, 0)
         else:
-            padding = (_same_pad(k,r) // 2, _same_pad(k,r) // 2)
+            padding = (p // 2 + p % 2, p // 2)
         self.pad = nn.ConstantPad1d(padding, 0.)
         #self.pad = nn.ReflectionPad1d(padding) # this might be better for audio
         self.maskedconv1xk = nn.Conv1d(d, d, kernel_size=k, dilation=r, bias=ub)
