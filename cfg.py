@@ -304,12 +304,16 @@ class CFG(object):
                 epochs = [8, 20, 70]
             else:
                 epochs = [25, 70, 100]
-            opt_type = torch.optim.SGD
+            if "attn" in self.model_name:
+                opt_type = torch.optim.SGD
+                opt_kwargs = {"momentum": 0.9}
+            else:
+                opt_type = torch.optim.Adam
+                opt_kwargs = {"amsgrad": True}
             opt_params = [
                 {"params": model_list[0].parameters(), "lr": self.args.lr},
                 {"params": model_list[1].parameters(), "lr": self.args.lr}
             ]
-            opt_kwargs = {"momentum": 0.9}
         optimizer = opt_type(opt_params, **opt_kwargs)
         if weights is not None:
             optimizer.load_state_dict(weights)
@@ -451,7 +455,6 @@ class CFG(object):
                     # set inputs and targets
                     mb, tgts = mb.to(self.device), tgts.to(self.device)
                     mb = encoder(mb)
-                    mb.unsqueeze_(1)
                     out = decoder(mb)
                     if "margin" in self.loss_criterion:
                         out = F.sigmoid(out)
@@ -587,8 +590,6 @@ class CFG(object):
                     # set inputs and targets
                     mb_valid, tgts_valid = mb_valid.to(self.device), tgts_valid.to(torch.device("cpu"))
                     mb_valid = encoder(mb_valid)
-                    # turn 3d input into 4d input for classifier
-                    mb_valid.unsqueeze_(1)
                     out_valid = decoder(mb_valid)
                     if "margin" in self.loss_criterion:
                         out_valid = F.sigmoid(out_valid)

@@ -168,6 +168,7 @@ class BytenetDecoder(nn.Module):
         self.k = k
         self.d = d
         self.num_sets = num_sets
+        self.num_classes = num_classes
         self.use_logsm = use_logsm # this is for NLLLoss
         self.sets = nn.Sequential()
         for i in range(num_sets):
@@ -180,16 +181,20 @@ class BytenetDecoder(nn.Module):
                     self.sets.add_module("reduce_pad_{}".format(i+1), reduce_pad)
                     self.sets.add_module("reduce_{}".format(i+1), reduce_conv)
         self.conv1 = nn.Conv1d(2*d, 2*d, 1)
-        self.conv2 = nn.Conv1d(2*d, num_classes, 1)
+        self.conv2 = nn.Conv1d(2*d, d, 1)
         self.logsm = nn.LogSoftmax(dim=1)
+        self.fc = nn.Linear(225 * d, self.num_classes)
 
     def forward(self, input):
+        n = input.size(0)
         x = input
         x = self.sets(x)
         x = F.relu(x)
         x = self.conv1(x)
         x = F.relu(x)
         x = self.conv2(x)
+        x = x.view(n, -1)
+        x = self.fc(x)
         if self.use_logsm:
             x = self.logsm(x)
         return x
@@ -214,7 +219,7 @@ class BytenetDecoder(nn.Module):
 
 def bytenet(kwargs_encoder, kwargs_decoder):
     encoder = BytenetEncoder(**kwargs_encoder)
-    #decoder = BytenetDecoder(**kwargs_decoder)
-    decoder = resnet34_decoder(pretrained=True, **kwargs_decoder)
+    decoder = BytenetDecoder(**kwargs_decoder)
+    #decoder = resnet34_decoder(pretrained=True, **kwargs_decoder)
     #decoder = squeezenet_decoder(pretrained=True, **kwargs_decoder)
     return [encoder, decoder]
