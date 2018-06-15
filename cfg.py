@@ -14,6 +14,7 @@ import torchvision.transforms as tvt
 import mgc_transforms
 from loader_audioset import *
 from tqdm import tqdm
+from sklearn.metrics import confusion_matrix
 
 class CFG(object):
     def __init__(self):
@@ -143,7 +144,7 @@ class CFG(object):
                 "max_r": 16,
                 "k": 3,
                 "num_sets": 6,
-                "reduce_out": [17, 3, 0, 2, 0, 7],
+                "reduce_out": [8, 4, 0, 2, 0, 4],
             }
             kwargs_decoder = {
                 "d": self.d,
@@ -225,10 +226,10 @@ class CFG(object):
                     tat.LC2CL(),
                 ])
         elif "bytenet" in self.model_name:
-            offset = 714 # make clips divisible by 224
+            #offset = 714 # make clips divisible by 224
             T = tat.Compose([
-                    #mgc_transforms.SimpleTrim(self.max_len),
-                    tat.PadTrim(self.max_len - offset, fill_value=1e-8),
+                    mgc_transforms.SimpleTrim(self.max_len),
+                    #tat.PadTrim(self.max_len),
                     mgc_transforms.Scale(),
                     tat.LC2CL(),
                 ])
@@ -620,17 +621,19 @@ class CFG(object):
     def test(self):
         self.ds.set_split("test", self.args.num_samples)
         thresh = 1. / 50.
+        prec = 0.
+        reca = 0.
         acc = 0.
         num_batches = len(self.dl)
         num_labels = len(self.ds.labels_dict)
-        jsondata = []
+        infer_outputs = []
         counter_array = np.zeros((num_labels, 6)) # tgts, preds, tp, fp, tn, fn
         if any(x in self.model_name for x in ["resnet", "squeezenet"]):
             m = self.model_list[0]
             # set model(s) into eval mode
             m.eval()
             with tqdm(total=num_batches, leave=False, position=1,
-                      postfix={"acc": acc}) as t:
+                      postfix={"accuracy": acc, "precision": prec}) as t:
                 for mb, tgts in self.dl:
                     mb = mb.to(self.device)
                     tgts = tgts.to(torch.device("cpu"))
@@ -638,7 +641,7 @@ class CFG(object):
                     out = m(mb)
                     # move output to cpu for analysis / numpy
                     out = out.to(torch.device("cpu"))
-                    jsondata.append((out.numpy().tolist(), tgts.numpy().tolist()))
+                    infer_outputs.append((out.numpy().tolist(), tgts.numpy().tolist()))
                     if self.loss_criterion == "crossentropy":
                         out = F.softmax(out, dim = 1)
                     else:
@@ -670,14 +673,141 @@ class CFG(object):
                         tmp1 = torch.topk(o, k)[1]  # get indicies
                         tmp2 = np.where(tgt == 1.)[0]
                     #acc = counter_array[:, 0].sum() / counter_array[:, 0].sum()
-                    #t.set_postfix({"acc": acc, "loss": "{0:.6f}".format(last_five_ave)})
+                    ttp = counter_array[:, 2].sum()
+                    tfp = counter_array[:, 3].sum()
+                    ttn = counter_array[:, 4].sum()
+                    tfn = counter_array[:, 5].sum()
+                    prec = ttp / (ttp + tfp)
+                    reca = ttp / (ttp + tfn)
+                    acc = (ttp + ttn) / (ttp + tfp + ttn + tfn)
+                    t.set_postfix({"accuracy": "{0:.4f}".format(acc * 100.), "precision": "{0:.4f}".format(prec * 100.)})
                     t.update()
                     #correct += (out_valid.detach().max(1)[1] == tgts_valid.detach()).sum()
+        elif "attn" in self.model_name:
+            encoder = self.model_list[0]
+            decoder = self.model_list[1]
+            # set model(s) into eval mode
+            encoder.eval()
+            decoder.eval()
+            with tqdm(total=num_batches, leave=True, position=1,
+                      postfix={"accuracy": acc, "precision": prec}) as t:
+                for i, ((mb, lengths), tgts) in enumerate(self.dl):
+                    # set model into train mode and clear gradients
+
+                    # move inputs to cuda if required
+                    mb = mb.to(self.device)
+                    tgts = tgts.to(torch.device("cpu"))
+                    # init hidden before packing
+                    encoder_hidden = encoder.initHidden(mb)
+
+                    # set inputs and targets
+                    mb = pack(mb, lengths, batch_first=True)
+                    #print(mb.size(), tgts.size())
+                    encoder_output, encoder_hidden = encoder(mb, encoder_hidden)
+
+                    #print(encoder_output.detach().new(dec_size).size())
+                    #enc_out_var, enc_out_len = unpack(encoder_output, batch_first=True)
+                    #dec_i = enc_out_var.new_zeros((self.batch_size, 1, encoder.hidden_size))
+                    dec_h = encoder_hidden # Use last (forward) hidden state from encoder
+                    #print(decoder.n_layers, encoder_hidden.size(), dec_i.size(), dec_h.size())
+
+                    # run through decoder in one shot
+                    mb, _ = unpack(mb, batch_first=True)
+                    out, dec_h, dec_attn = decoder(mb, dec_h, encoder_output)
+                    # calculate loss
+                    out = out.to(torch.device("cpu"))
+                    out.squeeze_()
+                    infer_outputs.append((out.numpy().tolist(), tgts.numpy().tolist()))
+                    if self.loss_criterion == "crossentropy":
+                        out = F.softmax(out, dim = 1)
+                    else:
+                        out = F.sigmoid(out)
+                    # out is either size (N, C) or (N, )
+                    for tgt, o in zip(tgts, out):
+                        o_mask = torch.zeros_like(o)
+                        o_mask[torch.topk(o, tgt.sum().int().item())[1]] = 1.
+                        o_mask = o_mask.numpy()
+                        o_mask = o_mask.astype(np.bool)
+                        tgt = tgt.numpy()
+                        tgt_mask = tgt == 1.
+                        counter_array[tgt_mask, 0] += 1
+                        #print(o_mask); break;
+
+                        counter_array[o_mask, 1] += 1
+                        tp = np.logical_and(tgt_mask==True, o_mask==True)  # this will be deflated for cross entorpy
+                        fp = np.logical_and(tgt_mask==False, o_mask==True)
+                        tn = np.logical_and(tgt_mask==False, o_mask==False)
+                        fn = np.logical_and(tgt_mask==True, o_mask==False)
+
+                        counter_array[tp, 2] += 1
+                        counter_array[fp, 3] += 1
+                        counter_array[tn, 4] += 1
+                        counter_array[fn, 5] += 1
+                    ttp = counter_array[:, 2].sum()
+                    tfp = counter_array[:, 3].sum()
+                    ttn = counter_array[:, 4].sum()
+                    tfn = counter_array[:, 5].sum()
+                    prec = ttp / (ttp + tfp)
+                    reca = ttp / (ttp + tfn)
+                    acc = (ttp + ttn) / (ttp + tfp + ttn + tfn)
+                    t.set_postfix({"accuracy": "{0:.4f}".format(acc * 100.), "precision": "{0:.4f}".format(prec * 100.)})
+                    t.update()
+        elif "bytenet" in self.model_name:
+            encoder = self.model_list[0]
+            decoder = self.model_list[1]
+            # set model(s) into eval mode
+            encoder.eval()
+            decoder.eval()
+            with tqdm(total=num_batches, leave=True, position=1,
+                      postfix={"accuracy": acc, "precision": prec}) as t:
+                for i, (mb, tgts) in enumerate(self.dl):
+                    # set inputs and targets
+                    mb, tgts = mb.to(self.device), tgts.to(torch.device("cpu"))
+                    mb = encoder(mb)
+                    # turn 3d input into 4d input for classifier
+                    mb.unsqueeze_(1)
+                    out = decoder(mb)
+                    out = out.to(torch.device("cpu"))
+                    infer_outputs.append((out.numpy().tolist(), tgts.numpy().tolist()))
+                    if self.loss_criterion == "crossentropy":
+                        out = F.softmax(out, dim = 1)
+                    else:
+                        out = F.sigmoid(out)
+                    # out is either size (N, C) or (N, )
+                    for tgt, o in zip(tgts, out):
+                        o_mask = torch.zeros_like(o)
+                        o_mask[torch.topk(o, tgt.sum().int().item())[1]] = 1.
+                        o_mask = o_mask.numpy()
+                        o_mask = o_mask.astype(np.bool)
+                        tgt = tgt.numpy()
+                        tgt_mask = tgt == 1.
+                        counter_array[tgt_mask, 0] += 1
+                        #print(o_mask); break;
+
+                        counter_array[o_mask, 1] += 1
+                        tp = np.logical_and(tgt_mask==True, o_mask==True)  # this will be deflated for cross entorpy
+                        fp = np.logical_and(tgt_mask==False, o_mask==True)
+                        tn = np.logical_and(tgt_mask==False, o_mask==False)
+                        fn = np.logical_and(tgt_mask==True, o_mask==False)
+
+                        counter_array[tp, 2] += 1
+                        counter_array[fp, 3] += 1
+                        counter_array[tn, 4] += 1
+                        counter_array[fn, 5] += 1
+                    ttp = counter_array[:, 2].sum()
+                    tfp = counter_array[:, 3].sum()
+                    ttn = counter_array[:, 4].sum()
+                    tfn = counter_array[:, 5].sum()
+                    prec = ttp / (ttp + tfp)
+                    reca = ttp / (ttp + tfn)
+                    acc = (ttp + ttn) / (ttp + tfp + ttn + tfn)
+                    t.set_postfix({"accuracy": "{0:.4f}".format(acc * 100.), "precision": "{0:.4f}".format(prec * 100.)})
+                    t.update()
 
         else:
             raise NotImplemented
-        #json.dump(jsondata, open("output/tmp/test_output.json", "w"))
-        print(counter_array.astype(np.int))
+        self.infer_stats = counter_array
+        self.infer_outputs = infer_outputs
     def get_train(self):
         return self.fit
 

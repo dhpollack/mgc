@@ -10,9 +10,9 @@ if __name__ == '__main__':
     assert config.load_model  # we need to load a model
     with torch.no_grad():
         infer()
-    #with open("output/losses_{}_{}_{}.json".format(config.model_name, config.loss_criterion, cur_epoch), "w") as f:
-    #    losses = {
-    #        "train_losses": config.train_losses,
-    #        "valid_losses": config.valid_losses,
-    #    }
-    #    json.dump(losses, f)
+    cached = "cache" if config.use_cache else "nocache"
+    noise = "noise" if config.noises_dir else "nonoise"
+    json_name = "output/inference_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, config.dataset, noise, cached)
+    json.dump(config.infer_stats.tolist(), open(json_name, "w"))
+    json_name = "output/output_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, config.dataset, noise, cached)
+    json.dump(config.infer_outputs, open(json_name, "w"))

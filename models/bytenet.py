@@ -13,7 +13,7 @@ def resnet34_decoder(pretrained=False, d=40, num_classes=2, **kwargs):
 
     resnet = model_zoo.resnet34(pretrained=pretrained)
     # change the last fc layer
-    resnet.fc = nn.Linear(512 * 1, num_classes)
+    resnet.fc = nn.Linear(1024 * 1, num_classes)
 
     model = nn.Sequential(preprocess, resnet)
 
