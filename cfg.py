@@ -765,8 +765,6 @@ class CFG(object):
                     # set inputs and targets
                     mb, tgts = mb.to(self.device), tgts.to(torch.device("cpu"))
                     mb = encoder(mb)
-                    # turn 3d input into 4d input for classifier
-                    mb.unsqueeze_(1)
                     out = decoder(mb)
                     out = out.to(torch.device("cpu"))
                     infer_outputs.append((out.numpy().tolist(), tgts.numpy().tolist()))

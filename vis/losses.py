@@ -16,7 +16,7 @@ a specified json file or json files.
 """
 
 parser = argparse.ArgumentParser(description='visualize losses')
-parser.add_argument('--json-glob', type=str, default="output/*.json",
+parser.add_argument('--json-glob', type=str, default="output/losses*.json",
                     help='glob argument for json files')
 parser.add_argument('--json-file', type=str, default=None,
                     help='use for a single json file')
@@ -41,13 +41,21 @@ for jsonfile in jsonfiles:
     data = json.load(open(jsonfile, 'r'))
     filename = os.path.basename(jsonfile).split("_")
     nusc = len(filename)
+    subtitle = []
     model_name = filename[1].capitalize()
-    loss_type = "BCE" if "BCE" in jsonfile else "Cross Entropy"
-    subtitle = "{} trained with {} loss".format(model_name, loss_type)
-    if nusc == 5:
-        preprocess = "Spectrogram" if jsonfile == "conv" else "MFCC"
-        subtitle += " ({})".format(preprocess)
-
+    subtitle.append(model_name)
+    loss_type = "BCE" if "bce" in jsonfile else "Cross Entropy"
+    subtitle.append(loss_type)
+    if "resnet" in model_name.lower():
+        preprocess = "Spectrogram" if "conv" in jsonfile else "MFCC"
+        subtitle.append(preprocess)
+    ds_type = "Unbalanced" if "unbalanced" in jsonfile else "Balanced"
+    subtitle.append(ds_type)
+    if not "nocache" in jsonfile:
+        subtitle.append("w/Cache")
+    if not "nonoise" in jsonfile:
+        subtitle.append("w/Noise")
+    subtitle = ", ".join(subtitle)
     train_losses = np.array(data["train_losses"])
     num_epochs = train_losses.shape[0]
     valid_data = np.array(data["valid_losses"])
