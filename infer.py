@@ -12,7 +12,8 @@ if __name__ == '__main__':
         infer()
     cached = "nocache" if "nocache" in config.load_model else "cache"
     noise = "nonoise" if "nonoise" in config.load_model else "noise"
-    json_name = "output/inference_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, config.dataset, noise, cached)
+    ds = "unbalanced" if "unbalanced" in config.load_model else "balanced"
+    json_name = "output/inference_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, ds, noise, cached)
     json.dump(config.infer_stats.tolist(), open(json_name, "w"))
     json_name = "output/output_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, config.dataset, noise, cached)
     json.dump(config.infer_outputs, open(json_name, "w"))
