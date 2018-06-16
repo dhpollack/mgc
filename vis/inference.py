@@ -60,6 +60,7 @@ for jf in jsonfiles:
     nettypename.append("No Cache" if fn_split[i + 6] == "nocache" else "w/Cache")
     all_files.append((", ".join(nettypename), acc))
 
+all_files.sort()
 print(all_files)
 
 if args.output_latex:
