@@ -11,7 +11,7 @@ if __name__ == '__main__':
     with torch.no_grad():
         infer()
     cached = "nocache" if "nocache" in config.load_model else "cache"
-    noise = "nonoise" if "nonoise" in config.load_model else "noise"
+    noise = "noise" if "noisy" in config.load_model else "nonoise"
     ds = "unbalanced" if "unbalanced" in config.load_model else "balanced"
     json_name = "output/inference_{}_{}_{}_{}_{}.json".format(config.model_name, config.loss_criterion, ds, noise, cached)
     json.dump(config.infer_stats.tolist(), open(json_name, "w"))
